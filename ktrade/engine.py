@@ -1,9 +1,10 @@
 """
 The trading loop.
 
-Every tick (30 s): mark both books to live prices and close positions at their stop, target or time limit.
-Once an hour, after the hourly candle closes: scan, let the baseline rules and Claude each decide on the same
-candidates, and open whatever the risk engine accepts. Every decision, including refusals, is recorded.
+Every tick (30 s): mark both books to live prices and close positions that hit their stop (or optional target /
+time limit). After each bar closes (every 4 hours by default): trail the stops, exit positions whose trend has
+ended, scan, let the baseline rules and Claude each decide on the same candidates, and open whatever the risk
+engine accepts. Exit rules are identical for both books. Every decision, including refusals, is recorded.
 """
 import logging
 import time
@@ -14,7 +15,8 @@ from ktrade import risk
 from ktrade.config import Settings
 from ktrade.council import CouncilError
 from ktrade.ledger import BOOKS, Ledger
-from ktrade.scanner import correlation, scan
+from ktrade.scanner import correlation, history_days, scan
+from ktrade.signals import features
 
 IST = timezone(timedelta(hours=5, minutes=30))
 log = logging.getLogger("ktrade")
@@ -56,17 +58,24 @@ class Engine:
     def tick(self, force_cycle: bool = False) -> Dict[str, Any]:
         marks = self.delta.tickers()
         self.manage_exits(marks)
-        hour = int(self.clock() // 3600)
-        due = int(self.ledger.get("last_cycle_hour", "-1")) != hour and self.clock() % 3600 >= 120
+        bar_sec = self.s.bar_hours * 3600
+        bar = int(self.clock() // bar_sec)
+        due = int(self.ledger.get(f"last_cycle_bar_{self.s.bar_hours}h", "-1")) != bar and self.clock() % bar_sec >= 120
+        self.status["next_cycle"] = (bar + 1) * bar_sec + 120
         if due or force_cycle:
-            self.ledger.put("last_cycle_hour", str(hour))       # set first: a failing cycle is not hammered every tick
+            self.ledger.put(f"last_cycle_bar_{self.s.bar_hours}h", str(bar))   # set first: a failing cycle is not hammered
             self.cycle(marks)
         if self.clock() - self._snapshot_at >= 900:
             self._snapshot_at = self.clock()
             for b in BOOKS:
                 self.ledger.snapshot(b, self.ledger.equity(b, marks))
-        self.status.update(last_tick=self.clock(), books={b: self.ledger.summary(b, marks) for b in BOOKS},
-                           positions=self.positions(marks))
+        day = datetime.fromtimestamp(self.clock(), IST).strftime("%Y-%m-%d")
+        books = {}
+        for b in BOOKS:
+            books[b] = self.ledger.summary(b, marks)
+            books[b]["today_pnl"] = round(books[b]["equity"] - self.ledger.day_start_equity(b, day, books[b]["equity"]), 2)
+        self.status.update(last_tick=self.clock(), books=books, positions=self.positions(marks),
+                           claude_cost_today=round(float(self.ledger.get(f"claude_cost_{day}", "0")), 3))
         return self.status
 
     def manage_exits(self, marks: Dict) -> List[Dict[str, Any]]:
@@ -77,15 +86,42 @@ class Engine:
                 continue
             px = t["bid"] if p["side"] > 0 else t["ask"]
             reason = ("stop" if (px - p["stop"]) * p["side"] <= 0 else
-                      "target" if (px - p["target"]) * p["side"] >= 0 else
-                      "time limit" if (self.clock() - p["opened_at"]) / 3600 >= self.s.max_hold_hours else None)
+                      "target" if p["target"] is not None and (px - p["target"]) * p["side"] >= 0 else
+                      "time limit" if self.s.max_hold_hours and (self.clock() - p["opened_at"]) / 3600 >= self.s.max_hold_hours
+                      else None)
             if reason:
                 closed.append(self.ledger.close(p, self._fill(t, p["side"], opening=False), self.s.taker_fee, reason))
                 log.info("[%s] closed %s %s: %s, net $%.2f", p["book"], "long" if p["side"] > 0 else "short",
                          p["symbol"], reason, closed[-1]["net"])
         return closed
 
+    def review_positions(self, marks: Dict) -> None:
+        """At each bar close: ratchet trailing stops and close positions whose trend has ended (both books alike)."""
+        res = f"{self.s.bar_hours}h" if self.s.bar_hours < 24 else "1d"
+        cache: Dict[str, Optional[Dict]] = {}
+        for p in self.ledger.positions():
+            sym, side = p["symbol"], p["side"]
+            if sym not in cache:
+                try:
+                    df = self.delta.candles(sym, res, days=history_days(self.s.bar_hours))
+                    cache[sym] = features(df, self.s.bar_hours) if len(df) > 200 else None
+                except Exception as e:                                # keep the old stop; it is still enforced every tick
+                    log.warning("review %s: %s", sym, e)
+                    cache[sym] = None
+            f, t = cache[sym], marks.get(sym)
+            if not f or not t:
+                continue
+            if self.s.trend_exit and f["trend"] * side <= 0:
+                r = self.ledger.close(p, self._fill(t, side, opening=False), self.s.taker_fee, f"trend over ({f['trend']:+.2f})")
+                log.info("[%s] closed %s: trend over, net $%.2f", p["book"], sym, r["net"])
+                continue
+            if self.s.trail:
+                new = f["price"] - side * self.s.stop_atr * f["atr"]
+                if (new - p["stop"]) * side > 0:
+                    self.ledger.update_stop(p["id"], new)
+
     def cycle(self, marks: Dict) -> None:
+        self.review_positions(marks)
         products = self._products()
         result = scan(self.delta, self.s, self.clock(), products, marks)
         cands, self.returns = result["candidates"], result["returns"]
@@ -114,6 +150,8 @@ class Engine:
             return
         self.status["council"] = {"at": self.clock(), "market_view": d["market_view"], "entries": d["entries"],
                                   "exits": d["exits"], "cost_usd": d.get("cost_usd")}
+        key = f"claude_cost_{datetime.fromtimestamp(self.clock(), IST).strftime('%Y-%m-%d')}"
+        self.ledger.put(key, str(float(self.ledger.get(key, "0")) + float(d.get("cost_usd") or 0)))
         for x in d["exits"]:
             if x["action"] != "exit":
                 continue
@@ -158,5 +196,6 @@ class Engine:
                 continue
             did = self.ledger.decide(book, sym, act, conv, "opened", d)
             self.ledger.open(book, plan, fill, self.s.taker_fee, t["funding_rate"], d.get("thesis", "")[:200], did)
-            log.info("[%s] opened %s %d %s @ %.6g | stop %.6g target %.6g | risk $%.2f | %s", book, act, plan.qty, sym,
-                     fill, plan.stop, plan.target, plan.risk_usd, d.get("thesis", "")[:120])
+            log.info("[%s] opened %s %d %s @ %.6g | stop %.6g | target %s | risk $%.2f | %s", book, act, plan.qty, sym,
+                     fill, plan.stop, f"{plan.target:.6g}" if plan.target else "none (trailing)", plan.risk_usd,
+                     d.get("thesis", "")[:120])

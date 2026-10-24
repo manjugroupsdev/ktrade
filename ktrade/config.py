@@ -23,14 +23,20 @@ class Settings:
     vol_ratio_cap: float = 3.0             # volatility expansion counts at most 3x in the score
     max_correlation: float = 0.85          # two coins moving this much in step are the same bet (e.g. XAUT and PAXG)
 
+    # Bars and exits, chosen by scripts/research.py (4h trailing-stop rules; see docs/RESEARCH.md).
+    bar_hours: int = 4                     # scan on 4-hour candles; 1-hour rules lost money out of sample
+    trail: bool = True                     # the stop follows the close by stop_atr x ATR and never loosens
+    trend_exit: bool = True                # exit when the trend score no longer supports the position
+    long_only: bool = False
+
     # Risk engine. Applies to both books; Claude can never change these.
     risk_per_trade: float = 0.005          # 0.5% of equity lost if the stop is hit (plus costs)
     max_positions: int = 3
     max_gross_leverage: float = 2.0        # total notional across positions / equity
     daily_loss_limit: float = 0.03         # no new entries for the rest of the IST day after -3%
-    stop_atr: float = 3.0                  # stop distance = 3 x ATR(14) of 1-hour candles
-    take_profit_r: float = 2.0             # target = 2 x the stop distance
-    max_hold_hours: float = 48.0
+    stop_atr: float = 3.0                  # stop distance = 3 x ATR(14) of the bars
+    take_profit_r: float = 0.0             # fixed target as a multiple of the stop distance; 0 = none (let winners run)
+    max_hold_hours: float = 0.0            # 0 = no time limit
     slippage_bps: float = 3.0
     taker_fee: float = 0.0005 * 1.18       # Delta taker fee + 18% GST
     min_conviction: float = 0.6            # AI book only: weaker ideas are skipped

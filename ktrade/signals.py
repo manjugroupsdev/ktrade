@@ -45,18 +45,20 @@ def trend_score(df: pd.DataFrame) -> float:
     return (ema + _donchian(df, 55, 20) + _donchian(df, 168, 72) + tsmom) / 4
 
 
-def features(df: pd.DataFrame) -> Dict[str, Any]:
+def features(df: pd.DataFrame, bar_hours: int = 1) -> Dict[str, Any]:
+    """Windows match ktrade.backtest: volatility baseline over 30 days, returns over 24 hours and 7 days."""
     a = atr(df)
     c = df["close"]
     last = float(c.iloc[-1])
-    baseline_atr = float(a.tail(24 * 30).median())
+    day = 24 // bar_hours
+    baseline_atr = float(a.tail(30 * day).median())
     out = {
         "price": last,
         "atr": float(a.iloc[-1]),
         "atr_pct": float(a.iloc[-1] / last * 100),
         "vol_ratio": float(a.iloc[-1] / baseline_atr) if baseline_atr else 1.0,   # >1 = volatility expanding
-        "ret_24h_pct": float((last / c.iloc[-25] - 1) * 100) if len(c) > 25 else 0.0,
-        "ret_7d_pct": float((last / c.iloc[-169] - 1) * 100) if len(c) > 169 else 0.0,
+        "ret_24h_pct": float((last / c.iloc[-day - 1] - 1) * 100) if len(c) > day else 0.0,
+        "ret_7d_pct": float((last / c.iloc[-7 * day - 1] - 1) * 100) if len(c) > 7 * day else 0.0,
         "trend": trend_score(df),
         "rsi14": float(rsi(c).iloc[-1]),
         "bars": int(len(df)),

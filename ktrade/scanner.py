@@ -9,7 +9,14 @@ from ktrade.delta import Delta, DeltaError
 from ktrade.signals import features
 
 log = logging.getLogger("ktrade.scanner")
-MIN_HISTORY_BARS = 24 * 30
+
+
+def min_bars(bar_hours: int) -> int:
+    return 30 * 24 // bar_hours + 200          # a 30-day volatility baseline plus the 200-bar average, as in the backtest
+
+
+def history_days(bar_hours: int) -> int:
+    return 40 if bar_hours == 1 else 100
 
 
 def universe(products: Dict[str, Dict], tickers: Dict[str, Dict], s: Settings, now: float) -> List[str]:
@@ -42,19 +49,19 @@ def scan(delta: Delta, s: Settings, now: float, products=None, tickers=None) -> 
     rows, wild, returns = [], [], {}
     for sym in syms:
         try:
-            df = delta.candles(sym, "1h", days=40)
+            df = delta.candles(sym, f"{s.bar_hours}h" if s.bar_hours < 24 else "1d", days=history_days(s.bar_hours))
         except DeltaError as e:
             log.warning("candles %s: %s", sym, e)
             continue
-        if len(df) < MIN_HISTORY_BARS:
+        if len(df) < min_bars(s.bar_hours):
             continue
-        f = features(df)
+        f = features(df, s.bar_hours)
         returns[sym] = df["close"].pct_change().tail(168).reset_index(drop=True)
         t = tickers[sym]
         f.update(symbol=sym, contract_value=products[sym]["contract_value"], turnover_musd=round(t["turnover_usd"] / 1e6, 1),
                  funding_rate_pct_8h=t["funding_rate"],
                  spread_bps=round((t["ask"] - t["bid"]) / ((t["ask"] + t["bid"]) / 2) * 1e4, 2))
-        if f["atr_pct"] > s.max_atr_pct or abs(f["ret_24h_pct"]) > s.max_move_24h_pct:
+        if f["atr_pct"] > s.max_atr_pct * s.bar_hours ** 0.5 or abs(f["ret_24h_pct"]) > s.max_move_24h_pct:
             wild.append({"symbol": sym, "atr_pct": round(f["atr_pct"], 2), "ret_24h_pct": round(f["ret_24h_pct"], 1)})
             continue                                             # a frenzy, not a trend: stops would be miles away
         f["score"] = min(f["vol_ratio"], s.vol_ratio_cap) * abs(f["trend"])     # expanding volatility AND a direction

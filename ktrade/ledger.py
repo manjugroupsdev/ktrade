@@ -27,6 +27,11 @@ class Ledger:
             os.makedirs(os.path.dirname(path), exist_ok=True)
         with self._db() as db:
             db.executescript(SCHEMA)
+            for table in ("positions", "trades"):                 # databases created by v0.1 lack the risk column
+                try:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN risk REAL")
+                except sqlite3.OperationalError:
+                    pass
             for b in BOOKS:
                 db.execute("INSERT OR IGNORE INTO books VALUES (?, ?, ?, ?)", (b, start_equity, start_equity, clock()))
 
@@ -56,9 +61,9 @@ class Ledger:
         fee = abs(plan.qty * plan.contract_value * fill) * fee_rate
         with self._db() as db:
             cur = db.execute("INSERT INTO positions (book, symbol, side, qty, contract_value, entry, stop, target, opened_at,"
-                             " funding_rate, reason, decision_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                             " funding_rate, reason, decision_id, risk) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (book, plan.symbol, plan.side, plan.qty, plan.contract_value, fill, plan.stop, plan.target,
-                              self.clock(), funding_rate, reason, decision_id))
+                              self.clock(), funding_rate, reason, decision_id, getattr(plan, "risk_usd", None)))
             db.execute("UPDATE books SET cash = cash - ? WHERE name=?", (fee, book))
             return cur.lastrowid
 
@@ -75,10 +80,14 @@ class Ledger:
             # The entry fee was already taken from cash when the position opened.
             db.execute("UPDATE books SET cash = cash + ? WHERE name=?", (gross - abs(units * fill) * fee_rate - funding, pos["book"]))
             db.execute("INSERT INTO trades (book, symbol, side, qty, entry, exit, opened_at, closed_at, gross, fees, funding, net,"
-                       " exit_reason, entry_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       " exit_reason, entry_reason, risk) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        (pos["book"], pos["symbol"], pos["side"], pos["qty"], pos["entry"], fill, pos["opened_at"], self.clock(),
-                        round(gross, 4), round(fees, 4), round(funding, 4), round(net, 4), reason, pos["reason"]))
+                        round(gross, 4), round(fees, 4), round(funding, 4), round(net, 4), reason, pos["reason"], pos.get("risk")))
         return {"symbol": pos["symbol"], "net": round(net, 2), "reason": reason}
+
+    def update_stop(self, position_id: int, stop: float) -> None:
+        with self._db() as db:
+            db.execute("UPDATE positions SET stop=? WHERE id=?", (stop, position_id))
 
     # --- accounting ----------------------------------------------------------------------------
     def cash(self, book: str) -> float:
@@ -134,7 +143,16 @@ class Ledger:
         t = self.trades(book, limit=100000)
         wins, losses = [x["net"] for x in t if x["net"] > 0], [x["net"] for x in t if x["net"] <= 0]
         eq, start = self.equity(book, marks), self.start_equity(book)
+        r_mult = [x["net"] / x["risk"] for x in t if x.get("risk")]
+        curve = [e for _, e in self.curve(book)] + [eq]
+        peak, max_dd = curve[0], 0.0
+        for e in curve:
+            peak = max(peak, e)
+            max_dd = min(max_dd, (e - peak) / peak)
         return {"equity": round(eq, 2), "start": start, "return_pct": round((eq / start - 1) * 100, 2),
+                "net_closed": round(sum(x["net"] for x in t), 2), "max_drawdown_pct": round(max_dd * 100, 2),
+                "avg_r": round(sum(r_mult) / len(r_mult), 2) if r_mult else None,
+                "open_risk": round(sum(p.get("risk") or 0 for p in self.positions(book)), 2),
                 "trades": len(t), "wins": len(wins), "losses": len(losses),
                 "win_rate": round(len(wins) / len(t) * 100, 1) if t else None,
                 "avg_win": round(sum(wins) / len(wins), 2) if wins else None,

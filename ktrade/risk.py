@@ -1,7 +1,7 @@
 """The risk engine. Identical for both books; nothing here can be changed by Claude."""
 import math
 from dataclasses import dataclass
-from typing import Union
+from typing import Optional, Union
 
 from ktrade.config import Settings
 
@@ -13,7 +13,7 @@ class Plan:
     qty: int             # contracts
     entry: float
     stop: float
-    target: float
+    target: Optional[float]   # None = no fixed target; the trailing stop or trend exit closes it
     risk_usd: float      # loss at the stop, including round-trip fees and slippage
     notional: float
     contract_value: float
@@ -35,7 +35,8 @@ def plan_entry(s: Settings, symbol: str, side: int, price: float, atr: float, co
     qty = min(qty, math.floor(room / (price * contract_value)) if room > 0 else 0)
     if qty < 1:
         return f"exposure cap: {s.max_gross_leverage:g}x equity already used"
-    return Plan(symbol, side, qty, price, price - side * stop_dist, price + side * s.take_profit_r * stop_dist,
+    target = price + side * s.take_profit_r * stop_dist if s.take_profit_r > 0 else None
+    return Plan(symbol, side, qty, price, price - side * stop_dist, target,
                 round(qty * per_contract, 2), round(qty * price * contract_value, 2), contract_value)
 
 

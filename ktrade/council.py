@@ -64,7 +64,10 @@ class ClaudeCouncil:
         pos = [{"symbol": p["symbol"], "side": p["side"], "entry": p["entry"], "mark": p.get("mark"),
                 "unrealized_usd": p.get("unrealized"), "hours_open": p.get("hours_open"), "opened_because": p.get("reason")}
                for p in positions]
-        prompt = (f"Paper equity: ${equity:,.2f}.\n\nCandidates (1-hour candles; trend -1..+1 from four trend models; "
+        exits = (f"Positions exit by a trailing stop {self.s.stop_atr:g}x ATR behind the close, or when the trend score "
+                 f"turns against them{'' if not self.s.take_profit_r else f', or at a {self.s.take_profit_r:g}R target'}. "
+                 "You may also exit AI-book positions early.")
+        prompt = (f"Paper equity: ${equity:,.2f}. {exits}\n\nCandidates ({self.s.bar_hours}-hour candles; trend -1..+1 from four trend models; "
                   f"vol_ratio = ATR now / 30-day median ATR; score = vol_ratio x |trend|):\n{json.dumps(cand, indent=1)}\n\n"
                   f"Open AI-book positions:\n{json.dumps(pos, indent=1) if pos else 'none'}\n\n"
                   "Decide per candidate and per open position. Reply with the JSON schema.")

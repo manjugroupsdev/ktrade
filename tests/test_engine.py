@@ -108,3 +108,59 @@ def test_no_second_position_in_a_twin_of_an_open_one(settings, delta, ledger, cl
     clock.t += 3600
     e.tick()
     assert "UP2USD" not in {p["symbol"] for p in ledger.positions("baseline")}
+
+
+# --- researched defaults: 4-hour bars, trailing stop, exit when the trend ends ---------------------------
+def researched(settings):
+    from dataclasses import replace
+    return replace(settings, bar_hours=4, trail=True, trend_exit=True, take_profit_r=0.0, max_hold_hours=0.0)
+
+
+def test_default_settings_are_the_researched_rules():
+    s = Settings()
+    assert (s.bar_hours, s.trail, s.trend_exit, s.take_profit_r, s.max_hold_hours) == (4, True, True, 0.0, 0.0)
+
+
+def test_four_hour_cadence_and_no_fixed_target(settings, delta, ledger, clock):
+    council = FakeCouncil()
+    e = engine_with(researched(settings), delta, ledger, clock, council)
+    e.tick()
+    assert all(p["target"] is None for p in ledger.positions())
+    calls = len(council.calls)
+    clock.t += 3600
+    e.tick()
+    assert len(council.calls) == calls                                 # an hour later: still the same 4h bar
+    clock.t += 3 * 3600
+    e.tick()
+    assert len(council.calls) == calls + 1
+
+
+def test_trailing_stop_only_tightens_and_trend_end_closes(settings, delta, ledger, clock):
+    import pandas as pd
+    e = engine_with(researched(settings), delta, ledger, clock, FakeCouncil())
+    e.tick()
+    up = next(p for p in ledger.positions("baseline") if p["symbol"] == "UPUSD")
+    # Price keeps rising: the stop follows it up.
+    df = delta.frames["UPUSD"]
+    delta.frames["UPUSD"] = pd.concat([df, df.tail(30).assign(time=df["time"].iloc[-1] + 3600 * (1 + pd.RangeIndex(30)),
+                                                             close=df["close"].iloc[-1] * 1.05, high=df["close"].iloc[-1] * 1.0502,
+                                                             low=df["close"].iloc[-1] * 1.0498, open=df["close"].iloc[-1] * 1.05)])
+    delta.set_price("UPUSD", df["close"].iloc[-1] * 1.05)
+    clock.t += 4 * 3600
+    e.tick()
+    raised = next(p for p in ledger.positions("baseline") if p["symbol"] == "UPUSD")["stop"]
+    assert raised > up["stop"]
+    # A long slide turns every trend model negative: the position closes on the trend exit, not the stop.
+    df = delta.frames["UPUSD"]
+    n, last = 400, df["close"].iloc[-1]
+    slide = last * (1 - 0.0004 * (1 + pd.RangeIndex(n)).to_numpy())
+    delta.frames["UPUSD"] = pd.concat([df, pd.DataFrame({"time": df["time"].iloc[-1] + 3600 * (1 + pd.RangeIndex(n)), "open": slide,
+                                                         "high": slide * 1.0002, "low": slide * 0.9998, "close": slide, "volume": 1.0})])
+    delta.set_price("UPUSD", slide[-1])
+    for p in ledger.positions("baseline"):
+        if p["symbol"] == "UPUSD":
+            ledger.update_stop(p["id"], slide[-1] * 0.5)                 # keep the stop out of the way
+    clock.t += 4 * 3600
+    e.tick()
+    t = next(x for x in ledger.trades("baseline") if x["symbol"] == "UPUSD")
+    assert t["exit_reason"].startswith("trend over")

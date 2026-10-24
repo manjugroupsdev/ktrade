@@ -14,7 +14,7 @@ from conftest import NOW, make_candles
 
 # --- risk ------------------------------------------------------------------------------------------
 def test_size_fits_the_risk_budget_including_costs():
-    s = Settings()
+    s = Settings(take_profit_r=2.0)
     p = risk.plan_entry(s, "BTCUSD", 1, 80_000.0, 400.0, 0.001, 1000.0, 0.0)
     per_contract = (3 * 400 + (2 * s.taker_fee + 2 * s.slippage_bps / 1e4) * 80_000) * 0.001
     assert p.qty == int(5.0 // per_contract) and p.risk_usd <= 5.0
@@ -22,10 +22,11 @@ def test_size_fits_the_risk_budget_including_costs():
 
 
 def test_short_levels_are_mirrored_and_too_risky_is_refused():
-    s = Settings()
+    s = Settings(take_profit_r=2.0)
     p = risk.plan_entry(s, "X", -1, 100.0, 1.0, 1.0, 1000.0, 0.0)
     assert p.stop == 103.0 and p.target == 94.0
     assert "budget" in risk.plan_entry(s, "X", 1, 100.0, 10.0, 1.0, 1000.0, 0.0)       # $30 stop on one contract > $5
+    assert risk.plan_entry(Settings(), "X", 1, 100.0, 1.0, 1.0, 1000.0, 0.0).target is None   # default: no fixed target
 
 
 def test_exposure_cap_limits_quantity():

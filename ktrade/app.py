@@ -1,5 +1,6 @@
 """Read-only dashboard API. Bound to localhost; requests arriving through a proxy or tunnel need the panel token."""
 import hmac
+import json
 import os
 
 from fastapi import FastAPI, Request
@@ -26,7 +27,17 @@ def create_app(engine, ledger, s) -> FastAPI:
     def status():
         return engine.status | {"settings": {"risk_per_trade": s.risk_per_trade, "max_positions": s.max_positions,
                                              "daily_loss_limit": s.daily_loss_limit, "stop_atr": s.stop_atr,
-                                             "take_profit_r": s.take_profit_r, "model": s.claude_model}}
+                                             "take_profit_r": s.take_profit_r, "max_hold_hours": s.max_hold_hours,
+                                             "bar_hours": s.bar_hours, "trail": s.trail, "trend_exit": s.trend_exit,
+                                             "model": s.claude_model, "start_equity": s.start_equity}}
+
+    @app.get("/api/research")
+    def research():
+        path = os.path.join(os.path.dirname(s.db_path) or ".", "research", "report.json")
+        if not os.path.exists(path):
+            return {"available": False, "hint": "run: python scripts/research.py"}
+        with open(path) as f:
+            return {"available": True} | json.load(f)
 
     @app.get("/api/curve")
     def curve(since: float = 0):
