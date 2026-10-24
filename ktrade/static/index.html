@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ktrade · Claude vs Rules</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#14171c; --dim:#626b78; --line:#e3e6eb; --ai:#7c4dff; --base:#0f9d8a;
+          --up:#0a8f4d; --down:#d03b3b; --warn:#b26b00; --chip:#eef0f4; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0d0f13; --card:#161a20; --ink:#e9edf2; --dim:#94a0ae; --line:#262c35;
+          --ai:#a68bff; --base:#38c7b2; --up:#3fd28a; --down:#ff6b6b; --warn:#ffb547; --chip:#1f252d; } }
+  * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif }
+  main { max-width:1180px; margin:0 auto; padding:20px 16px 48px }
+  header { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-bottom:16px }
+  h1 { font-size:20px; margin:0 } h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0 0 10px }
+  .pill { background:var(--chip); border-radius:999px; padding:4px 10px; font-size:12px; color:var(--dim) }
+  .pill b { color:var(--ink) } .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle }
+  .grid { display:grid; gap:14px } .two { grid-template-columns:repeat(auto-fit,minmax(300px,1fr)) }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; min-width:0 }
+  .book h3 { margin:0 0 6px; font-size:15px; display:flex; align-items:center; gap:8px }
+  .big { font-size:30px; font-weight:700; font-variant-numeric:tabular-nums }
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:10px }
+  .stats div { font-size:12px; color:var(--dim) } .stats b { display:block; font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums }
+  .up { color:var(--up) } .down { color:var(--down) } .muted { color:var(--dim) }
+  .verdict { font-size:15px; margin:14px 0; padding:12px 14px; border-radius:12px; background:var(--chip) }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums } th,td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:top }
+  th { color:var(--dim); font-weight:500; font-size:12px } .scroll { overflow-x:auto }
+  .tag { font-size:11px; padding:2px 7px; border-radius:6px; background:var(--chip); white-space:nowrap }
+  .tag.ai { color:var(--ai) } .tag.baseline { color:var(--base) }
+  svg { width:100%; height:200px; display:block } .legend span { margin-right:14px; font-size:12px; color:var(--dim) }
+  .view { white-space:pre-wrap; color:var(--ink) } footer { margin-top:24px; font-size:12px; color:var(--dim) }
+  @media (max-width:560px) { .stats { grid-template-columns:repeat(2,1fr) } .big { font-size:26px } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>ktrade · Claude vs Rules</h1><div class="muted">Paper trading on Delta Exchange India public prices. No real money.</div></div>
+    <div id="health" class="pill">connecting…</div>
+  </header>
+
+  <div class="grid two">
+    <section class="card book"><h3><span class="dot" style="background:var(--ai)"></span>AI book · Claude proposes</h3><div id="ai"></div></section>
+    <section class="card book"><h3><span class="dot" style="background:var(--base)"></span>Baseline · rules only</h3><div id="baseline"></div></section>
+  </div>
+  <div id="verdict" class="verdict muted">Waiting for the first trades…</div>
+
+  <section class="card" style="margin-bottom:14px"><h2>Equity</h2>
+    <div class="legend"><span style="color:var(--ai)">━ Claude</span><span style="color:var(--base)">━ Rules</span></div>
+    <svg id="chart" viewBox="0 0 1000 200" preserveAspectRatio="none" role="img" aria-label="Equity of both books over time"></svg></section>
+
+  <div class="grid two">
+    <section class="card"><h2>Open positions</h2><div class="scroll" id="positions"></div></section>
+    <section class="card"><h2>Claude's latest view</h2><div id="council"></div></section>
+  </div>
+  <section class="card" style="margin-top:14px"><h2>This hour's candidates</h2><div class="scroll" id="scan"></div></section>
+  <section class="card" style="margin-top:14px"><h2>Decision log</h2><div class="scroll" id="decisions"></div></section>
+  <footer>Every decision, including refusals, is logged. Both books use the same risk engine; only the entry idea differs.
+    Results include fees, slippage and funding. Past paper results do not predict future returns. Not financial advice.</footer>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const usd = (v, sign) => v == null ? "–" : (sign && v > 0 ? "+" : "") + (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
+const ago = t => { if (!t) return "never"; const s = Date.now()/1000 - t; return s < 90 ? Math.round(s)+"s ago" : s < 5400 ? Math.round(s/60)+" min ago" : Math.round(s/3600)+" h ago"; };
+const ist = t => new Date(t*1000).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+
+async function api(path) {
+  const res = await fetch(path, {headers: {"X-Panel-Token": localStorage.getItem("ktrade-token") || ""}, cache: "no-store"});
+  if (res.status === 401) { const t = prompt("Panel token (KTRADE_PANEL_TOKEN in .env):"); if (t) { localStorage.setItem("ktrade-token", t.trim()); return api(path); } }
+  if (!res.ok) throw new Error(path + " " + res.status);
+  return res.json();
+}
+
+function book(b) {
+  if (!b) return '<div class="muted">–</div>';
+  return `<div class="big">${usd(b.equity)}</div>
+    <div class="${cls(b.return_pct)}">${b.return_pct > 0 ? "+" : ""}${b.return_pct}% since start (${usd(b.start)})</div>
+    <div class="stats"><div>Trades<b>${b.trades}</b></div><div>Win rate<b>${b.win_rate ?? "–"}${b.win_rate != null ? "%" : ""}</b></div>
+      <div>Won per $1 lost<b>${b.profit_factor ?? "–"}</b></div><div>Open<b>${b.open}</b></div>
+      <div>Avg win<b>${usd(b.avg_win)}</b></div><div>Avg loss<b>${usd(b.avg_loss)}</b></div>
+      <div>Fees paid<b>${usd(b.fees)}</b></div><div>Funding<b>${usd(-b.funding, true)}</b></div></div>`;
+}
+
+function chart(curve) {
+  const all = [...curve.ai, ...curve.baseline]; if (all.length < 2) { $("chart").innerHTML = ""; return; }
+  const t0 = Math.min(...all.map(p => p[0])), t1 = Math.max(...all.map(p => p[0]));
+  const lo = Math.min(...all.map(p => p[1])), hi = Math.max(...all.map(p => p[1])), pad = (hi - lo) * .1 || 1;
+  const x = t => (t - t0) / ((t1 - t0) || 1) * 1000, y = v => 200 - (v - lo + pad) / (hi - lo + 2 * pad) * 200;
+  const line = (pts, c) => `<polyline fill="none" stroke="${c}" stroke-width="2" vector-effect="non-scaling-stroke" points="${pts.map(p => x(p[0]).toFixed(1)+","+y(p[1]).toFixed(1)).join(" ")}"/>`;
+  $("chart").innerHTML = line(curve.baseline, "var(--base)") + line(curve.ai, "var(--ai)");
+}
+
+async function refresh() {
+  try {
+    const [st, curve, dec] = await Promise.all([api("/api/status"), api("/api/curve"), api("/api/decisions?limit=40")]);
+    const stale = !st.last_tick || Date.now()/1000 - st.last_tick > 180;
+    $("health").innerHTML = `<span class="dot" style="background:${stale || st.last_error ? "var(--warn)" : "var(--up)"}"></span>
+      <b>${stale ? "not ticking" : "live"}</b> · tick ${ago(st.last_tick)} · scan ${ago(st.last_cycle)}${st.last_error ? " · " + esc(st.last_error).slice(0, 80) : ""}`;
+    const b = st.books || {}; $("ai").innerHTML = book(b.ai); $("baseline").innerHTML = book(b.baseline);
+    if (b.ai && b.baseline && (b.ai.trades || b.baseline.trades)) {
+      const d = b.ai.equity - b.baseline.equity;
+      $("verdict").className = "verdict";
+      $("verdict").innerHTML = `Claude is <b class="${cls(d)}">${d >= 0 ? "ahead of" : "behind"}</b> the rules by <b>${usd(Math.abs(d))}</b>
+        after ${b.ai.trades} vs ${b.baseline.trades} closed trades. Judge after about 30 trades each, not before.`;
+    }
+    chart(curve);
+    const pos = st.positions || [];
+    $("positions").innerHTML = pos.length ? `<table><tr><th>Book</th><th>Coin</th><th>Side</th><th>Qty</th><th>Entry</th><th>Now</th><th>Stop / Target</th><th>P/L</th></tr>${pos.map(p =>
+      `<tr><td><span class="tag ${p.book}">${p.book === "ai" ? "Claude" : "Rules"}</span></td><td>${esc(p.symbol)}</td><td>${p.side}</td><td>${p.qty}</td>
+       <td>${(+p.entry).toPrecision(6)}</td><td>${p.mark ? (+p.mark).toPrecision(6) : "–"}</td><td>${(+p.stop).toPrecision(6)} / ${(+p.target).toPrecision(6)}</td>
+       <td class="${cls(p.unrealized)}">${usd(p.unrealized, true)}</td></tr>`).join("")}</table>` : '<div class="muted">No open positions.</div>';
+    const c = st.council;
+    $("council").innerHTML = !c ? '<div class="muted">Claude has not been asked yet this session.</div>' : c.error
+      ? `<div class="down">Unavailable ${ago(c.at)}: ${esc(c.error)}</div><div class="muted">The AI book takes no new trades until Claude answers again.</div>`
+      : `<div class="muted" style="margin-bottom:6px">${ist(c.at)} · ${c.cost_usd != null ? "$" + c.cost_usd.toFixed(3) + " of Claude usage" : ""}</div>
+         <div class="view">${esc(c.market_view)}</div>
+         <table style="margin-top:8px">${(c.entries || []).map(e => `<tr><td>${esc(e.symbol)}</td><td><b>${e.action}</b></td><td>${(e.conviction*100).toFixed(0)}%</td><td>${esc(e.thesis)}</td></tr>`).join("")}</table>`;
+    const cand = (st.scan || {}).candidates || [];
+    $("scan").innerHTML = cand.length ? `<table><tr><th>Coin</th><th>Score</th><th>Trend</th><th>Volatility vs normal</th><th>ATR</th><th>24h</th><th>7d</th><th>Volume 24h</th></tr>${cand.map(k =>
+      `<tr><td>${esc(k.symbol)}</td><td>${k.score.toFixed(2)}</td><td class="${cls(k.trend)}">${k.trend > 0 ? "+" : ""}${k.trend.toFixed(2)}</td><td>×${k.vol_ratio.toFixed(2)}</td>
+       <td>${k.atr_pct.toFixed(2)}%</td><td class="${cls(k.ret_24h_pct)}">${k.ret_24h_pct.toFixed(1)}%</td><td class="${cls(k.ret_7d_pct)}">${k.ret_7d_pct.toFixed(1)}%</td><td>$${k.turnover_musd}M</td></tr>`).join("")}</table>`
+      : '<div class="muted">No scan yet. Scans run a couple of minutes after each hour.</div>';
+    $("decisions").innerHTML = dec.length ? `<table><tr><th>Time</th><th>Book</th><th>Coin</th><th>Idea</th><th>Outcome</th><th>Why</th></tr>${dec.map(d => {
+      let why = ""; try { const j = JSON.parse(d.detail); why = j.thesis || j.reason || ""; } catch { why = d.detail; }
+      return `<tr><td>${ist(d.at)}</td><td><span class="tag ${d.book}">${d.book === "ai" ? "Claude" : "Rules"}</span></td><td>${esc(d.symbol)}</td>
+        <td>${esc(d.action)}${d.conviction ? " " + Math.round(d.conviction*100) + "%" : ""}</td><td>${esc(d.outcome)}</td><td class="muted">${esc(why).slice(0, 220)}</td></tr>`; }).join("")}</table>`
+      : '<div class="muted">No decisions yet.</div>';
+  } catch (e) { $("health").innerHTML = `<span class="dot" style="background:var(--down)"></span><b>offline</b> · ${esc(e.message)}`; }
+}
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>
