@@ -47,7 +47,7 @@ every hour   scanner: liquid (≥ $5M/day), listed ≥ 60 days, tight spread, no
 Requirements: Python 3.11+, and the [Claude Code CLI](https://docs.claude.com/en/docs/claude-code) logged in (`claude` works in your terminal).
 
 ```bash
-git clone <this repo> ktrade && cd ktrade
+git clone https://github.com/manjugroupsdev/ktrade.git && cd ktrade
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 cp .env.example .env            # optional: adjust settings
 .venv/bin/python -m pytest      # offline tests, no network or Claude needed
