@@ -42,6 +42,17 @@ class Settings:
     min_conviction: float = 0.6            # AI book only: weaker ideas are skipped
     baseline_trend: float = 0.5            # baseline book: |trend score| needed to trade
 
+    # Options book: buys an at-the-money call or put on BTC/ETH when the trend rules signal. Premium is the whole risk.
+    options_enabled: bool = True
+    options_underlyings: tuple = ("BTC", "ETH")
+    options_min_days: float = 10.0         # expiry window when buying
+    options_max_days: float = 40.0
+    options_target_days: float = 21.0
+    options_exit_days: float = 3.0         # sell this close to expiry, before time decay is steepest
+    options_max_spread: float = 0.10       # skip options whose bid/ask spread is over 10% of the mid price
+    options_fee_rate: float = 0.0001 * 1.18    # Delta options taker fee on underlying notional, + GST
+    options_fee_cap: float = 0.10          # fee never more than 10% of the premium
+
     # Claude CLI (uses your own Claude subscription/login)
     claude_bin: str = "claude"
     claude_model: str = "sonnet"

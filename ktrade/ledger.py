@@ -5,7 +5,7 @@ import sqlite3
 import time
 from typing import Any, Dict, List, Optional
 
-BOOKS = ("ai", "baseline")
+BOOKS = ("ai", "baseline", "options")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS books (name TEXT PRIMARY KEY, start_equity REAL, cash REAL, created_at REAL);
 CREATE TABLE IF NOT EXISTS positions (id INTEGER PRIMARY KEY, book TEXT, symbol TEXT, side INTEGER, qty INTEGER,
@@ -27,9 +27,9 @@ class Ledger:
             os.makedirs(os.path.dirname(path), exist_ok=True)
         with self._db() as db:
             db.executescript(SCHEMA)
-            for table in ("positions", "trades"):                 # databases created by v0.1 lack the risk column
-                try:
-                    db.execute(f"ALTER TABLE {table} ADD COLUMN risk REAL")
+            for table, column in (("positions", "risk"), ("trades", "risk"), ("positions", "entry_fee")):
+                try:                                                  # columns added after v0.1
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {column} REAL")
                 except sqlite3.OperationalError:
                     pass
             for b in BOOKS:
@@ -61,16 +61,19 @@ class Ledger:
         fee = abs(plan.qty * plan.contract_value * fill) * fee_rate
         with self._db() as db:
             cur = db.execute("INSERT INTO positions (book, symbol, side, qty, contract_value, entry, stop, target, opened_at,"
-                             " funding_rate, reason, decision_id, risk) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                             " funding_rate, reason, decision_id, risk, entry_fee) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (book, plan.symbol, plan.side, plan.qty, plan.contract_value, fill, plan.stop, plan.target,
-                              self.clock(), funding_rate, reason, decision_id, getattr(plan, "risk_usd", None)))
+                              self.clock(), funding_rate, reason, decision_id, getattr(plan, "risk_usd", None), fee))
             db.execute("UPDATE books SET cash = cash - ? WHERE name=?", (fee, book))
             return cur.lastrowid
 
     def close(self, pos: Dict[str, Any], fill: float, fee_rate: float, reason: str) -> Dict[str, Any]:
         units = pos["qty"] * pos["contract_value"]
         gross = (fill - pos["entry"]) * pos["side"] * units
-        fees = (abs(units * pos["entry"]) + abs(units * fill)) * fee_rate
+        entry_fee = pos.get("entry_fee")
+        if entry_fee is None:                                         # positions opened before entry fees were stored
+            entry_fee = abs(units * pos["entry"]) * fee_rate
+        fees = entry_fee + abs(units * fill) * fee_rate
         hours = (self.clock() - pos["opened_at"]) / 3600
         # Perpetual funding (percent per 8h): longs pay a positive rate, shorts receive it.
         funding = abs(units * pos["entry"]) * pos["funding_rate"] / 100 * hours / 8 * pos["side"]

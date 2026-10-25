@@ -45,6 +45,19 @@ every 4 hours  (after the candle closes)
   the WebSearch tool) and must answer in a JSON schema that only allows the symbols it was shown. If Claude
   is unavailable, the AI book simply takes no new trades that cycle.
 
+## Options book (forward test)
+
+A third paper book expresses the same BTC and ETH trend signals with options instead of perpetuals. When a coin's
+trend score is at least +0.5 it buys the at-the-money **call** expiring about 3 weeks out (10–40 days); at −0.5 or
+below it buys the **put**. The premium is capped at the risk budget and is the most a trade can lose, so there is
+no stop. It sells when the trend score no longer supports the position, or 3 days before expiry. Buys pay the ask
+and sells receive the bid, plus Delta's options fee (0.01% of the underlying notional + GST, capped at 10% of the
+premium).
+
+There is no free history of option prices, so this book **cannot be backtested**. It is here to be measured
+forward against the other two. Earlier research found buying options usually underperforms when trends stall,
+because the premium decays; the paper results will show whether that holds.
+
 ## Research: why these rules
 
 `scripts/research.py` replays the rules book bar by bar on 20 major coins (2021 to now, Binance hourly prices
@@ -132,6 +145,7 @@ Set `KTRADE_CLAUDE_WEB=false` to disable web search, or `KTRADE_CLAUDE_MODEL` to
 | `ktrade/risk.py` | position sizing and daily loss limit |
 | `ktrade/ledger.py` | SQLite paper ledger: positions, trades, fees, funding, decisions, equity curve |
 | `ktrade/engine.py` | the loop that ties it together |
+| `ktrade/options.py` | the options book: contract choice, sizing by premium, exits |
 | `ktrade/history.py`, `ktrade/backtest.py`, `scripts/research.py` | historical data, portfolio backtest and the research report |
 | `ktrade/app.py`, `ktrade/static/index.html` | read-only dashboard |
 

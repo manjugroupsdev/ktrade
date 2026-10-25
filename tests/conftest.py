@@ -83,7 +83,8 @@ def clock():
 def settings(tmp_path):
     # The original hourly fixed-target rules: these tests pin down stops, targets, time limits and hourly cadence.
     return Settings(db_path=str(tmp_path / "t.db"), min_turnover_usd=5_000_000, min_listing_days=60, max_candidates=5,
-                    bar_hours=1, trail=False, trend_exit=False, take_profit_r=2.0, max_hold_hours=48)
+                    bar_hours=1, trail=False, trend_exit=False, take_profit_r=2.0, max_hold_hours=48,
+                    options_enabled=False)
 
 
 @pytest.fixture

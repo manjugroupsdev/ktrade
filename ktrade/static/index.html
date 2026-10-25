@@ -8,13 +8,13 @@
 <style>
   :root {
     --bg:#f4f5f8; --panel:#ffffff; --panel2:#f9fafc; --ink:#111318; --dim:#5d6573; --faint:#8a93a2; --line:#e4e7ec;
-    --ai:#7a5af8; --ai-soft:rgba(122,90,248,.12); --rules:#0e9f8a; --rules-soft:rgba(14,159,138,.12);
+    --ai:#7a5af8; --ai-soft:rgba(122,90,248,.12); --rules:#0e9f8a; --rules-soft:rgba(14,159,138,.12); --opt:#c27803; --opt-soft:rgba(194,120,3,.12);
     --up:#0a8f4e; --down:#d33b3b; --up-soft:rgba(10,143,78,.12); --down-soft:rgba(211,59,59,.12); --warn:#b56b00;
     --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.05);
   }
   @media (prefers-color-scheme: dark) { :root {
     --bg:#0b0d11; --panel:#14171d; --panel2:#181c23; --ink:#eef1f5; --dim:#a3acba; --faint:#717b8b; --line:#252a33;
-    --ai:#9d86ff; --ai-soft:rgba(157,134,255,.14); --rules:#33c9b2; --rules-soft:rgba(51,201,178,.13);
+    --ai:#9d86ff; --ai-soft:rgba(157,134,255,.14); --rules:#33c9b2; --rules-soft:rgba(51,201,178,.13); --opt:#fbbf24; --opt-soft:rgba(251,191,36,.12);
     --up:#3ed58a; --down:#ff6b6b; --up-soft:rgba(62,213,138,.13); --down-soft:rgba(255,107,107,.13); --warn:#ffb547;
     --shadow:none; } }
   * { box-sizing:border-box }
@@ -60,7 +60,8 @@
   .pos-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px }
   .coin { font-weight:700; font-size:15px } .tag { font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; margin-left:6px }
   .tag.long { background:var(--up-soft); color:var(--up) } .tag.short { background:var(--down-soft); color:var(--down) }
-  .tag.ai { background:var(--ai-soft); color:var(--ai) } .tag.baseline { background:var(--rules-soft); color:var(--rules) }
+  .tag.ai { background:var(--ai-soft); color:var(--ai) } .tag.baseline { background:var(--rules-soft); color:var(--rules) } .tag.options { background:var(--opt-soft); color:var(--opt) }
+  .side.opt { background:linear-gradient(180deg,var(--opt-soft),transparent 70%); border-radius:16px }
   .pnl { font-size:18px; font-weight:700; text-align:right } .pnl small { display:block; font-size:11px; font-weight:500; color:var(--dim) }
   .ruler { position:relative; height:6px; border-radius:999px; background:linear-gradient(90deg,var(--down-soft),var(--line) 50%,var(--up-soft)); margin:22px 2px 8px }
   .ruler .mk { position:absolute; top:-4px; width:2px; height:14px; background:var(--faint) } .ruler .now { position:absolute; top:-5px; width:16px; height:16px; margin-left:-8px; border-radius:50%; border:3px solid var(--panel); box-shadow:0 0 0 1px var(--line) }
@@ -98,10 +99,12 @@
     <div class="lead" id="lead"></div>
   </section>
 
+  <section class="card mt" style="padding:0"><div class="side opt" id="options"></div></section>
+
   <section class="card mt">
     <h2>Equity <span class="tabs" id="range"><button data-h="24">24h</button><button data-h="168" class="on">7d</button><button data-h="0">All</button></span></h2>
     <div id="eqchart" class="chart"></div>
-    <div class="legend"><span><i style="background:var(--ai)"></i>Claude</span><span><i style="background:var(--rules)"></i>Rules</span></div>
+    <div class="legend"><span><i style="background:var(--ai)"></i>Claude</span><span><i style="background:var(--rules)"></i>Rules</span><span><i style="background:var(--opt)"></i>Options</span></div>
   </section>
 
   <section class="card mt"><h2>Open positions <span class="faint" id="openrisk"></span></h2><div id="positions" class="poss"></div></section>
@@ -111,7 +114,7 @@
     <section class="card"><h2>Market scan <span class="faint" id="scanat"></span></h2><div id="scan"></div></section>
   </div>
 
-  <section class="card mt"><h2>Closed trades <span class="tabs" id="tfilter"><button data-b="" class="on">All</button><button data-b="ai">Claude</button><button data-b="baseline">Rules</button></span></h2><div class="scroll" id="trades"></div></section>
+  <section class="card mt"><h2>Closed trades <span class="tabs" id="tfilter"><button data-b="" class="on">All</button><button data-b="ai">Claude</button><button data-b="baseline">Rules</button><button data-b="options">Options</button></span></h2><div class="scroll" id="trades"></div></section>
 
   <section class="card mt"><h2>Proof: this exact code, replayed on history <span class="faint" id="pdate"></span></h2><div id="proof"></div></section>
 
@@ -132,7 +135,12 @@ const px = v => v == null ? "–" : (+v).toPrecision(6).replace(/\.?0+$/, "");
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const dur = s => s < 60 ? Math.round(s) + "s" : s < 3600 ? Math.round(s / 60) + "m" : s < 86400 ? Math.floor(s / 3600) + "h " + Math.round(s % 3600 / 60) + "m" : (s / 86400).toFixed(1) + "d";
 const ist = t => new Date(t * 1000).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"});
-const bookName = b => b === "ai" ? "Claude" : "Rules";
+const bookName = b => b === "ai" ? "Claude" : b === "options" ? "Options" : "Rules";
+// C-BTC-80000-131126 → "BTC call 80,000 · 13 Nov"
+const optLabel = sym => { const [k, u, strike, d] = sym.split("-"); const dt = new Date(Date.UTC(2000 + +d.slice(4), +d.slice(2, 4) - 1, +d.slice(0, 2)));
+  return `${u} ${k === "C" ? "call" : "put"} ${(+strike).toLocaleString()} · ${dt.toLocaleDateString("en-IN", {day: "2-digit", month: "short", timeZone: "UTC"})}`; };
+const coinLabel = sym => /^[CP]-/.test(sym) ? optLabel(sym) : sym.replace(/USD$/, "");
+const expiryOf = sym => { const d = sym.split("-")[3]; return Date.UTC(2000 + +d.slice(4), +d.slice(2, 4) - 1, +d.slice(0, 2), 12) / 1000; };
 let range = 168, tbook = "", charts = {};
 
 async function api(path) {
@@ -177,6 +185,17 @@ function book(id, b, name, sub, color) {
 function positions(list) {
   if (!list.length) { $("positions").innerHTML = '<div class="empty">No open positions. Both books are waiting for a setup.</div>'; $("openrisk").textContent = ""; return; }
   $("positions").innerHTML = list.map(p => {
+    if (p.book === "options") {
+      const paid = p.entry * p.qty * p.contract_value, now = p.mark == null ? null : p.mark * p.qty * p.contract_value, left = (expiryOf(p.symbol) - Date.now() / 1000) / 86400;
+      const mult = now == null ? null : now / paid;
+      return `<div class="pos"><div class="pos-top"><div><span class="coin">${esc(optLabel(p.symbol))}</span><span class="tag options">Options</span>
+          <div class="faint num" style="font-size:12px;margin-top:4px">${p.qty} contracts · paid ${money(paid)} (max loss)</div></div>
+          <div class="pnl num ${cls(p.unrealized)}">${money(p.unrealized, true)}<small>${mult == null ? "–" : mult.toFixed(2) + "× premium"}</small></div></div>
+        <div class="ruler" style="background:linear-gradient(90deg,var(--down-soft),var(--opt-soft))"><span class="now" style="left:${Math.min(100, (mult ?? 0) / 3 * 100).toFixed(1)}%;background:var(--opt)"></span>
+          <label style="left:0;transform:none">0×</label><label style="left:33.3%">1× paid</label><label style="left:100%;transform:translateX(-100%)">3×</label></div>
+        <div class="pos-meta num"><span>value now ${money(now)}</span><span>${left.toFixed(1)} days to expiry</span><span>${dur(Date.now() / 1000 - p.opened_at)} open</span></div>
+        ${p.reason ? `<div class="why">${esc(p.reason)}</div>` : ""}</div>`;
+    }
     const s = p.side_sign, entry = +p.entry, stop = +p.stop, now = +(p.mark ?? entry), tgt = p.target == null ? null : +p.target;
     // Ruler from the stop to the furthest of (target, current price, entry + 2 x risk) in the profit direction.
     const risk = Math.abs(entry - stop) || entry * .01, far = tgt ?? (s > 0 ? Math.max(now, entry + 2 * risk) : Math.min(now, entry - 2 * risk));
@@ -186,7 +205,7 @@ function positions(list) {
     const pl = p.unrealized, plPct = (now - entry) / entry * 100 * s, locked = (stop - entry) * s >= 0;
     const lab = v => { const x = +pos(v); return `left:${x}%;transform:translateX(${x < 18 ? "0" : x > 82 ? "-100%" : "-50%"})`; };
     return `<div class="pos">
-      <div class="pos-top"><div><span class="coin">${esc(p.symbol.replace(/USD$/, ""))}</span><span class="tag ${p.side}">${p.side}</span><span class="tag ${p.book}">${bookName(p.book)}</span>
+      <div class="pos-top"><div><span class="coin">${esc(coinLabel(p.symbol))}</span><span class="tag ${p.side}">${p.side}</span><span class="tag ${p.book}">${bookName(p.book)}</span>
         <div class="faint num" style="font-size:12px;margin-top:4px">${p.qty} contracts · in at ${px(entry)}</div></div>
         <div class="pnl num ${cls(pl)}">${money(pl, true)}<small>${pct(plPct)}</small></div></div>
       <div class="ruler"><span class="mk" style="left:${pos(stop)}%"></span><label style="${lab(stop)}">${locked ? "stop (profit locked)" : "stop"} ${px(stop)}</label>
@@ -227,7 +246,7 @@ function scan(sc, at) {
 async function trades() {
   const list = await api("/api/trades?limit=200" + (tbook ? "&book=" + tbook : ""));
   $("trades").innerHTML = list.length ? `<table class="num"><tr><th>Closed</th><th>Book</th><th>Coin</th><th>Side</th><th>Entry → exit</th><th>Held</th><th>Result</th><th>R</th><th>Why it closed</th></tr>${list.map(t =>
-    `<tr><td>${ist(t.closed_at)}</td><td><span class="tag ${t.book}" style="margin:0">${bookName(t.book)}</span></td><td><b>${esc(t.symbol.replace(/USD$/, ""))}</b></td>
+    `<tr><td>${ist(t.closed_at)}</td><td><span class="tag ${t.book}" style="margin:0">${bookName(t.book)}</span></td><td><b>${esc(coinLabel(t.symbol))}</b></td>
      <td><span class="tag ${t.side > 0 ? "long" : "short"}" style="margin:0">${t.side > 0 ? "long" : "short"}</span></td><td>${px(t.entry)} → ${px(t.exit)}</td>
      <td>${dur(t.closed_at - t.opened_at)}</td><td class="${cls(t.net)}"><b>${money(t.net, true)}</b></td><td class="${cls(t.net)}">${t.risk ? (t.net / t.risk).toFixed(2) : "–"}</td>
      <td class="dim">${esc(t.exit_reason)}</td></tr>`).join("")}</table>` : '<div class="empty">No closed trades yet. With 4-hour trend rules, trades last days, not hours.</div>';
@@ -281,9 +300,9 @@ async function research() {
 async function equity() {
   const since = range ? Date.now() / 1000 - range * 3600 : 0;
   const cv = await api("/api/curve?since=" + since);
-  if (!charts.eq) { charts.eq = makeChart($("eqchart"), 280); if (!charts.eq) return; charts.rules = line(charts.eq, css("--rules"), []); charts.ai = line(charts.eq, css("--ai"), []); }
+  if (!charts.eq) { charts.eq = makeChart($("eqchart"), 280); if (!charts.eq) return; charts.rules = line(charts.eq, css("--rules"), []); charts.ai = line(charts.eq, css("--ai"), []); charts.opt = line(charts.eq, css("--opt"), []); }
   const prep = d => { const seen = new Set(); return d.filter(([t]) => !seen.has(Math.floor(t)) && seen.add(Math.floor(t))).map(([t, v]) => ({time: Math.floor(t), value: v})); };
-  charts.rules.setData(prep(cv.baseline)); charts.ai.setData(prep(cv.ai)); charts.eq.timeScale().fitContent();
+  charts.rules.setData(prep(cv.baseline)); charts.ai.setData(prep(cv.ai)); charts.opt.setData(prep(cv.options || [])); charts.eq.timeScale().fitContent();
 }
 
 async function refresh() {
@@ -296,6 +315,7 @@ async function refresh() {
     $("rules").innerHTML = `<b>${set.bar_hours}h bars</b> · ${set.trail ? "trailing " + set.stop_atr + "×ATR stop" : set.stop_atr + "×ATR stop"}${set.trend_exit ? " · trend exit" : ""} · ${(set.risk_per_trade * 100).toFixed(1)}% risk`;
     book("ai", b.ai, "Claude", "proposes entries", "var(--ai)");
     book("baseline", b.baseline, "Rules", "trend rules only", "var(--rules)");
+    book("options", b.options, "Options", "buys calls & puts on BTC/ETH trend signals · premium is the max loss · not backtestable, forward test only", "var(--opt)");
     if (b.ai && b.baseline) {
       const d = b.ai.equity - b.baseline.equity, n = Math.min(b.ai.trades, b.baseline.trades);
       const share = Math.max(5, Math.min(95, 50 + d / Math.max(1, set.start_equity) * 1000));

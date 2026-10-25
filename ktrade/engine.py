@@ -29,6 +29,8 @@ class Engine:
         self._products_at = 0.0
         self._snapshot_at = 0.0
         self.returns: Dict = {}
+        from ktrade.options import OptionsBook
+        self.options = OptionsBook(s, delta, ledger, clock) if s.options_enabled else None
         self.status: Dict[str, Any] = {"started_at": clock(), "last_tick": None, "last_cycle": None,
                                        "scan": None, "council": None, "last_error": None}
 
@@ -57,6 +59,8 @@ class Engine:
     # --- loop --------------------------------------------------------------------------------
     def tick(self, force_cycle: bool = False) -> Dict[str, Any]:
         marks = self.delta.tickers()
+        if self.options:
+            marks.update(self.options.marks())
         self.manage_exits(marks)
         bar_sec = self.s.bar_hours * 3600
         bar = int(self.clock() // bar_sec)
@@ -101,6 +105,8 @@ class Engine:
         cache: Dict[str, Optional[Dict]] = {}
         for p in self.ledger.positions():
             sym, side = p["symbol"], p["side"]
+            if p["book"] == "options":
+                continue                                              # options exit on their own rules (ktrade.options)
             if sym not in cache:
                 try:
                     df = self.delta.candles(sym, res, days=history_days(self.s.bar_hours))
@@ -123,6 +129,12 @@ class Engine:
 
     def cycle(self, marks: Dict) -> None:
         self.review_positions(marks)
+        if self.options:
+            try:
+                self.options.cycle(marks)
+                self.status["options"] = self.options.last
+            except Exception:                                         # the options experiment must never stop the others
+                log.exception("options cycle failed")
         products = self._products()
         result = scan(self.delta, self.s, self.clock(), products, marks)
         cands, self.returns = result["candidates"], result["returns"]

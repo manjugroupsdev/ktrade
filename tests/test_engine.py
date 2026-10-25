@@ -94,7 +94,7 @@ def test_dashboard_api_and_token_gate(settings, delta, ledger, clock):
     assert c.get("/api/status", headers={"x-forwarded-for": "1.2.3.4"}).status_code == 401
     assert c.get("/api/status", headers={"x-forwarded-for": "1.2.3.4", "x-panel-token": "s3cret"}).status_code == 200
     assert "Claude vs Rules" in c.get("/").text
-    assert set(c.get("/api/curve").json()) == {"ai", "baseline"}
+    assert set(c.get("/api/curve").json()) == {"ai", "baseline", "options"}
 
 
 def test_no_second_position_in_a_twin_of_an_open_one(settings, delta, ledger, clock):

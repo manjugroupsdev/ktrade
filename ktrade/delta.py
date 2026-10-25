@@ -1,7 +1,7 @@
 """Delta Exchange India public market data. No API key: prices, contracts and candles are public."""
 import time
-from datetime import datetime
-from typing import Any, Dict
+from datetime import datetime, timezone
+from typing import Any, Dict, List
 
 import pandas as pd
 import requests
@@ -65,6 +65,26 @@ class Delta:
                 "ts": int(t.get("timestamp") or 0) / 1e6,
             }
         return out
+
+    @staticmethod
+    def _option(t: Dict[str, Any]) -> Dict[str, Any]:
+        """C-BTC-90000-061126 → call on BTC, strike 90000, settles 6 Nov 2026 12:00 UTC (Delta's settlement time)."""
+        kind, underlying, strike, ddmmyy = t["symbol"].split("-")
+        q = t.get("quotes") or {}
+        return {"symbol": t["symbol"], "kind": "call" if kind == "C" else "put", "underlying": underlying,
+                "strike": float(strike), "expiry": datetime(2000 + int(ddmmyy[4:]), int(ddmmyy[2:4]), int(ddmmyy[:2]), 12,
+                                                             tzinfo=timezone.utc).timestamp(),
+                "bid": float(q.get("best_bid") or 0), "ask": float(q.get("best_ask") or 0),
+                "mark": float(t.get("mark_price") or 0), "spot": float(t.get("spot_price") or 0),
+                "contract_value": float(t.get("contract_value") or 0.001),
+                "delta": float(((t.get("greeks") or {}).get("delta")) or 0), "iv": float(q.get("mark_iv") or 0)}
+
+    def option_chain(self, underlying: str) -> List[Dict[str, Any]]:
+        rows = self._get("/v2/tickers", contract_types="call_options,put_options", underlying_asset_symbols=underlying)
+        return [self._option(t) for t in rows if t.get("symbol", "").count("-") == 3]
+
+    def option_quote(self, symbol: str) -> Dict[str, Any]:
+        return self._option(self._get(f"/v2/tickers/{symbol}"))
 
     def candles(self, symbol: str, resolution: str = "1h", days: int = 40) -> pd.DataFrame:
         """Closed candles only, oldest first."""
