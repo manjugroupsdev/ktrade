@@ -148,7 +148,7 @@ function makeChart(el, height) {
     grid: {vertLines: {visible: false}, horzLines: {color: css("--line")}}, rightPriceScale: {borderVisible: false},
     timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false, minBarSpacing: 0.01}, crosshair: {mode: 0}, handleScroll: false, handleScale: false,
     localization: {priceFormatter: v => "$" + v.toFixed(2), timeFormatter: t => ist(t)}});
-  new ResizeObserver(() => c.applyOptions({width: el.clientWidth})).observe(el);
+  new ResizeObserver(() => { c.applyOptions({width: el.clientWidth}); c.timeScale().fitContent(); }).observe(el);
   return c;
 }
 function line(chart, color, data) {
@@ -240,7 +240,7 @@ function proof(rp) {
   const tile = (label, v, c = "") => `<div class="stat">${label}<b class="${c}">${v}</b></div>`;
   $("proof").innerHTML = `<p class="dim" style="margin-top:0">The live engine (the same scanner, risk engine, trailing stops, trend exits and ledger running on this Mac)
       was replayed hour by hour from <b>${esc(rp.start)}</b> on ${rp.coins.length} Delta coins, with real contract sizes, ${(st.risk_per_trade * 100).toFixed(1)}% risk per trade,
-      fees, slippage and funding. Stops fill at each hour's extreme price, slightly worse than live.</p>
+      fees, slippage and funding. ${rp.fills === "extreme" ? "Every stop fills at the hour's worst price (very pessimistic)." : "Stops fill where price crosses them, as the live 30-second check does; gaps fill at the open."}</p>
     <div class="stats num" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
       ${tile("$1,000 became", money(l.end_equity), cls(l.return_pct))}${tile("Total return", pct(l.return_pct, 1), cls(l.return_pct))}
       ${tile("Per year", pct(l.cagr_pct, 1), cls(l.cagr_pct))}${tile("Worst drop", l.max_drawdown_pct + "%", "down")}
