@@ -113,6 +113,8 @@
 
   <section class="card mt"><h2>Closed trades <span class="tabs" id="tfilter"><button data-b="" class="on">All</button><button data-b="ai">Claude</button><button data-b="baseline">Rules</button></span></h2><div class="scroll" id="trades"></div></section>
 
+  <section class="card mt"><h2>Proof: this exact code, replayed on history <span class="faint" id="pdate"></span></h2><div id="proof"></div></section>
+
   <section class="card mt research"><h2>Why these rules: 6 years of history <span class="faint" id="rdate"></span></h2><div id="research"></div></section>
 
   <section class="card mt"><details><summary>Decision log (every idea, including refusals)</summary><div class="scroll mt" id="decisions"></div></details></section>
@@ -231,8 +233,32 @@ async function trades() {
      <td class="dim">${esc(t.exit_reason)}</td></tr>`).join("")}</table>` : '<div class="empty">No closed trades yet. With 4-hour trend rules, trades last days, not hours.</div>';
 }
 
+function proof(rp) {
+  if (!rp) { $("proof").innerHTML = '<div class="empty">No replay yet. Run <code>python scripts/replay.py --start 2024-01-01</code>.</div>'; return; }
+  const l = rp.live_code_replay, sim = rp.research_simulator, st = rp.settings;
+  $("pdate").textContent = "run " + ist(rp.generated_at);
+  const tile = (label, v, c = "") => `<div class="stat">${label}<b class="${c}">${v}</b></div>`;
+  $("proof").innerHTML = `<p class="dim" style="margin-top:0">The live engine (the same scanner, risk engine, trailing stops, trend exits and ledger running on this Mac)
+      was replayed hour by hour from <b>${esc(rp.start)}</b> on ${rp.coins.length} Delta coins, with real contract sizes, ${(st.risk_per_trade * 100).toFixed(1)}% risk per trade,
+      fees, slippage and funding. Stops fill at each hour's extreme price, slightly worse than live.</p>
+    <div class="stats num" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
+      ${tile("$1,000 became", money(l.end_equity), cls(l.return_pct))}${tile("Total return", pct(l.return_pct, 1), cls(l.return_pct))}
+      ${tile("Per year", pct(l.cagr_pct, 1), cls(l.cagr_pct))}${tile("Worst drop", l.max_drawdown_pct + "%", "down")}
+      ${tile("Trades", l.trades)}${tile("Win rate", l.win_rate_pct + "%")}${tile("Won per $1 lost", l.profit_factor)}${tile("Avg trade", (l.avg_r > 0 ? "+" : "") + l.avg_r + "R", cls(l.avg_r))}
+    </div>
+    <div class="chips">${Object.entries(l.by_year).map(([y, v]) => `<span class="chip">${y}: <b class="${cls(v)}">${pct(v, 1)}</b></span>`).join("")}
+      <span class="chip">fees ${money(l.fees)} · funding ${money(l.funding)}</span></div>
+    <div id="pchart" class="chart mt" style="height:220px"></div>
+    <div class="note">Research simulator on the same window: ${pct(sim.return_pct, 1)} total, worst drop ${sim.max_drawdown_pct}%, ${sim.trades} trades.
+      Two independent implementations agreeing is the evidence that the live bot runs the researched strategy.
+      History is not a promise: the coming weeks of paper trading are the real test.</div>`;
+  const ch = makeChart($("pchart"), 220);
+  if (ch) { line(ch, css("--rules"), rp.equity); ch.timeScale().fitContent(); }
+}
+
 async function research() {
   const r = await api("/api/research");
+  proof(r.replay);
   if (!r.available) { $("research").innerHTML = `<div class="empty">No research report yet. Run <code>python scripts/research.py</code>.</div>`; return; }
   $("rdate").textContent = "updated " + ist(r.generated_at);
   const row = (v, pick) => { const a = v.in_sample || {}, b = v.out_of_sample || {};

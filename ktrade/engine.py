@@ -119,6 +119,7 @@ class Engine:
                 new = f["price"] - side * self.s.stop_atr * f["atr"]
                 if (new - p["stop"]) * side > 0:
                     self.ledger.update_stop(p["id"], new)
+                    log.info("[%s] %s trailing stop moved %.6g -> %.6g", p["book"], sym, p["stop"], new)
 
     def cycle(self, marks: Dict) -> None:
         self.review_positions(marks)

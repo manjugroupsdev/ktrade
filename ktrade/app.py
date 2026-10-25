@@ -37,7 +37,12 @@ def create_app(engine, ledger, s) -> FastAPI:
         if not os.path.exists(path):
             return {"available": False, "hint": "run: python scripts/research.py"}
         with open(path) as f:
-            return {"available": True} | json.load(f)
+            out = {"available": True} | json.load(f)
+        replay = os.path.join(os.path.dirname(path), "replay.json")
+        if os.path.exists(replay):
+            with open(replay) as f:
+                out["replay"] = json.load(f)
+        return out
 
     @app.get("/api/curve")
     def curve(since: float = 0):
