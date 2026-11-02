@@ -46,7 +46,7 @@ def create_app(engine, ledger, s) -> FastAPI:
 
     @app.get("/api/curve")
     def curve(since: float = 0):
-        return {b: ledger.curve(b, since) for b in BOOKS}
+        return {b: ledger.curve(b, since) for b in (*BOOKS, "agent")}
 
     @app.get("/api/trades")
     def trades(book: str = "", limit: int = 100):

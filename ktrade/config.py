@@ -53,6 +53,24 @@ class Settings:
     options_fee_rate: float = 0.0001 * 1.18    # Delta options taker fee on underlying notional, + GST
     options_fee_cap: float = 0.10          # fee never more than 10% of the premium
 
+    # Claude agent book: Claude decides everything; these caps are enforced in code and Claude cannot change them.
+    agent_enabled: bool = False
+    agent_mode: str = "demo"               # demo = Delta testnet (paper); live = real money
+    agent_live_confirm: str = ""           # live also needs: I accept that I can lose this money
+    delta_key: str = ""
+    delta_secret: str = ""
+    agent_model: str = "sonnet"
+    agent_max_risk_pct: float = 5.0        # % of equity lost if a stop is hit (size x stop distance + costs)
+    agent_max_leverage: float = 10.0
+    agent_max_positions: int = 3
+    agent_max_entries_per_day: int = 6     # over-trading is how most AI traders lost money
+    agent_daily_loss_pct: float = 15.0     # no new entries for the rest of the IST day
+    agent_floor_equity: float = 50.0       # at or below: close everything and halt until reset
+    agent_min_stop_pct: float = 0.4
+    agent_max_stop_pct: float = 8.0
+    agent_cycle_minutes: int = 60
+    agent_max_venue_deviation_pct: float = 0.5   # skip coins whose exchange price disagrees with the real market
+
     # Claude CLI (uses your own Claude subscription/login)
     claude_bin: str = "claude"
     claude_model: str = "sonnet"
@@ -73,7 +91,9 @@ class Settings:
             if raw is None:
                 continue
             default = f.default
-            if isinstance(default, bool):
+            if f.name in ("delta_key", "delta_secret", "agent_live_confirm", "agent_mode", "panel_token", "claude_bin"):
+                values[f.name] = raw.strip()
+            elif isinstance(default, bool):
                 values[f.name] = raw.strip().lower() in ("1", "true", "yes", "on")
             elif isinstance(default, tuple):
                 values[f.name] = tuple(s.strip().upper() for s in raw.split(",") if s.strip())

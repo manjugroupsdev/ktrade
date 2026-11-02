@@ -61,6 +61,11 @@
   .coin { font-weight:700; font-size:15px } .tag { font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; margin-left:6px }
   .tag.long { background:var(--up-soft); color:var(--up) } .tag.short { background:var(--down-soft); color:var(--down) }
   .tag.ai { background:var(--ai-soft); color:var(--ai) } .tag.baseline { background:var(--rules-soft); color:var(--rules) } .tag.options { background:var(--opt-soft); color:var(--opt) }
+  .agent-card { border-color:var(--ai); box-shadow:0 0 0 1px var(--ai-soft),var(--shadow) }
+  .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; letter-spacing:.06em } .badge.demo { background:var(--opt-soft); color:var(--opt) } .badge.live { background:var(--down); color:#fff }
+  .banner { padding:10px 14px; border-radius:10px; margin-bottom:12px; font-size:13px } .banner.bad { background:var(--down-soft); color:var(--down) }
+  .agent-top { display:grid; grid-template-columns:minmax(220px,1fr) 2fr; gap:18px } @media (max-width:760px) { .agent-top { grid-template-columns:1fr } }
+  .tag.agent { background:var(--ai); color:#fff }
   .side.opt { background:linear-gradient(180deg,var(--opt-soft),transparent 70%); border-radius:16px }
   .pnl { font-size:18px; font-weight:700; text-align:right } .pnl small { display:block; font-size:11px; font-weight:500; color:var(--dim) }
   .ruler { position:relative; height:6px; border-radius:999px; background:linear-gradient(90deg,var(--down-soft),var(--line) 50%,var(--up-soft)); margin:22px 2px 8px }
@@ -94,7 +99,9 @@
     <div class="pills"><span id="health" class="pill"><span class="dot"></span>connecting…</span><span id="next" class="pill"></span><span id="rules" class="pill"></span></div>
   </header>
 
-  <section class="card score" id="score">
+  <section class="card agent-card"><h2><span>Claude agent <span id="amode" class="badge demo">DEMO</span></span><span class="faint" id="anext"></span></h2><div id="agent"></div></section>
+
+  <section class="card score mt" id="score">
     <div class="side ai" id="ai"></div><div class="vs"><div>VERSUS</div></div><div class="side rules" id="baseline"></div>
     <div class="lead" id="lead"></div>
   </section>
@@ -135,7 +142,7 @@ const px = v => v == null ? "–" : (+v).toPrecision(6).replace(/\.?0+$/, "");
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const dur = s => s < 60 ? Math.round(s) + "s" : s < 3600 ? Math.round(s / 60) + "m" : s < 86400 ? Math.floor(s / 3600) + "h " + Math.round(s % 3600 / 60) + "m" : (s / 86400).toFixed(1) + "d";
 const ist = t => new Date(t * 1000).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"});
-const bookName = b => b === "ai" ? "Claude" : b === "options" ? "Options" : "Rules";
+const bookName = b => b === "agent" ? "Claude agent" : b === "ai" ? "Claude" : b === "options" ? "Options" : "Rules";
 // C-BTC-80000-131126 → "BTC call 80,000 · 13 Nov"
 const optLabel = sym => { const [k, u, strike, d] = sym.split("-"); const dt = new Date(Date.UTC(2000 + +d.slice(4), +d.slice(2, 4) - 1, +d.slice(0, 2)));
   return `${u} ${k === "C" ? "call" : "put"} ${(+strike).toLocaleString()} · ${dt.toLocaleDateString("en-IN", {day: "2-digit", month: "short", timeZone: "UTC"})}`; };
@@ -243,6 +250,40 @@ function scan(sc, at) {
     <div class="note">🌪 skipped as too wild (pump or crash) · ⇄ skipped as the same bet as a coin already chosen</div>`;
 }
 
+function agent(ag, curve) {
+  if (!ag || ag.enabled === false) {
+    $("agent").innerHTML = `<div class="empty">${ag && ag.error ? esc(ag.error) : "The agent is off. Set KTRADE_AGENT_ENABLED=true and the Delta keys in .env."}</div>`; return;
+  }
+  const live = !!ag.live; $("amode").textContent = live ? "LIVE · REAL MONEY" : "DEMO · Delta testnet"; $("amode").className = "badge " + (live ? "live" : "demo");
+  if (ag.next_cycle) $("anext").textContent = "next decision in " + dur(Math.max(0, ag.next_cycle - Date.now() / 1000));
+  const pnl = ag.equity - ag.start_equity, today = ag.equity - ag.day_start, caps = ag.caps || {};
+  const tile = (l, v, c = "") => `<div class="stat">${l}<b class="${c}">${v}</b></div>`;
+  const c = ag.claude;
+  $("agent").innerHTML = (ag.halted ? `<div class="banner bad"><b>Halted:</b> ${esc(ag.halted)}. Run <code>python -m ktrade agent-reset</code> to resume.</div>` : "") +
+    (ag.error ? `<div class="banner bad">Exchange problem: ${esc(ag.error)}</div>` : "") +
+    `<div class="agent-top"><div>
+       <div class="equity num">${money(ag.equity)}</div>
+       <div class="chg num ${cls(pnl)}">${money(pnl, true)} <span>since start (${money(ag.start_equity)}) ·</span> <span class="${cls(today)}">${money(today, true)}</span> <span>today</span></div>
+       <div class="stats num" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+         ${tile("Entries today", `${ag.entries_today} / ${caps.entries_per_day}`)}${tile("Open", `${(ag.positions || []).length} / ${caps.positions}`)}
+         ${tile("Max risk / trade", caps.risk_pct + "%")}${tile("Max leverage", caps.leverage + "×")}
+         ${tile("Daily loss stop", "−" + caps.daily_loss_pct + "%")}${tile("Halt below", money(caps.floor))}
+       </div><div id="achart" style="height:120px;margin-top:12px"></div></div>
+     <div>${(ag.positions || []).length ? `<table class="num"><tr><th>Position</th><th>Entry → now</th><th>P/L</th><th>Stop (on exchange)</th><th>Target</th><th>Liq.</th></tr>${ag.positions.map(p =>
+         `<tr><td><b>${esc(p.symbol.replace(/USD$/, ""))}</b> <span class="tag ${p.side}" style="margin:0">${p.side}</span> <span class="faint">${p.size}</span></td>
+          <td>${px(p.entry)} → ${px(p.mark)}</td><td class="${cls(p.unrealized)}"><b>${money(p.unrealized, true)}</b></td>
+          <td>${p.stop ? px(p.stop) : '<span class="down">none!</span>'}</td><td>${p.target ? px(p.target) : "–"}</td><td class="faint">${p.liquidation ? px(p.liquidation) : "–"}</td></tr>`).join("")}</table>`
+       : '<div class="empty" style="padding:8px 0">No open positions.</div>'}
+       ${c ? (c.error ? `<div class="banner bad">Claude unavailable ${ist(c.at)}: ${esc(c.error)}</div>` :
+         `<div class="view" style="margin-top:12px">${esc(c.market_view)}</div><div class="faint" style="font-size:12px">${ist(c.at)} · $${(c.cost_usd || 0).toFixed(3)} of Claude usage</div>` +
+         (c.actions || []).map(a => `<div class="decision"><span class="act ${a.type === "open" ? a.side : a.type === "close" ? "short" : "skip"}">${esc(a.type === "open" ? a.side : a.type.replace("_", " "))}</span>
+           <div><b>${esc(a.symbol.replace(/USD$/, ""))}</b> <span class="faint num">${a.type === "open" ? `risk ${a.risk_pct}% · ${a.leverage}× · stop ${px(a.stop_price)}${a.take_profit_price ? " · target " + px(a.take_profit_price) : ""}` : a.stop_price ? "stop " + px(a.stop_price) : ""}</span>
+           <div class="dim" style="font-size:13px;margin-top:3px">${esc(a.reason)}</div></div></div>`).join("") || '<div class="note">No action this hour: Claude chose to wait.</div>')
+         : '<div class="note">Claude decides a couple of minutes after each hour.</div>'}</div></div>`;
+  const ch = makeChart($("achart"), 120);
+  if (ch && curve && curve.agent && curve.agent.length) { line(ch, css("--ai"), curve.agent); ch.timeScale().fitContent(); }
+}
+
 async function trades() {
   const list = await api("/api/trades?limit=200" + (tbook ? "&book=" + tbook : ""));
   $("trades").innerHTML = list.length ? `<table class="num"><tr><th>Closed</th><th>Book</th><th>Coin</th><th>Side</th><th>Entry → exit</th><th>Held</th><th>Result</th><th>R</th><th>Why it closed</th></tr>${list.map(t =>
@@ -324,6 +365,7 @@ async function refresh() {
         <span class="meter" title="Claude's share of the lead"><i style="width:${share}%"></i></span>`;
     }
     positions(st.positions || []);
+    agent(st.agent, await api("/api/curve?since=" + (Date.now() / 1000 - 30 * 86400)));
     council(st.council, st.claude_cost_today);
     scan(st.scan, st.last_cycle);
     const dec = await api("/api/decisions?limit=60");

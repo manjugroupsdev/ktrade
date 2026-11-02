@@ -12,8 +12,9 @@ clear direction. Two books then trade the same candidates with the same risk eng
 | **Baseline** | a fixed rule: trade the direction of the trend score when it is strong | the risk engine |
 
 The dashboard shows both equity curves side by side, every decision and every refusal, and the historical
-research behind the rules, so you can see whether the AI adds anything beyond the rules. **It is paper trading
-only.** There is no code that places real orders.
+research behind the rules, so you can see whether the AI adds anything beyond the rules. These two books are
+paper trading on public prices. The optional **Claude agent** (below) places real orders on a Delta account,
+demo (testnet) by default.
 
 > **Not financial advice.** Most traders lose money. Past results, simulated or historical, do not predict
 > future returns. Paper fills ignore order-book depth and real-world outages. Treat this as research software.
@@ -57,6 +58,33 @@ premium).
 There is no free history of option prices, so this book **cannot be backtested**. It is here to be measured
 forward against the other two. Earlier research found buying options usually underperforms when trends stall,
 because the premium decays; the paper results will show whether that holds.
+
+## Claude agent (optional, places real orders)
+
+A separate book where Claude decides everything (which coin, direction, size, leverage, stop, target, when to exit),
+on a real Delta Exchange India account. It is off by default and starts on the **demo** (testnet) exchange.
+
+```
+every 30 s   read the account; if equity ≤ the floor, close everything and halt
+every hour   scanner (1-hour bars) → candidates + open positions + recent decisions → Claude → actions
+             open / close / move_stop, each checked by a guard in code before anything is sent
+```
+
+- **Hard caps Claude cannot change** (`.env`): risk per trade (default 5% of equity, fees included), leverage
+  (10x, and never so high that the liquidation price comes before the stop), 3 positions, 6 entries a day,
+  no entries after −15% in a day, and a floor ($50) that closes everything and stops the agent until
+  `python -m ktrade agent-reset`.
+- **Every position carries a stop held by the exchange** (bracket order), so a sleeping Mac or a crash cannot
+  leave it unprotected. If the exchange refuses the stop, the position is closed at once. Stops only tighten.
+- Only coins whose Delta price tracks the real market are allowed (testnet prices for thin coins can drift).
+- Every decision and every refusal goes to the decision log; the dashboard shows the account, Claude's latest
+  view, positions with their exchange stops and liquidation prices, and the countdown to the next decision.
+
+Setup: create an API key on [demo.delta.exchange](https://demo.delta.exchange) (trading permission, your IP
+whitelisted), set `KTRADE_AGENT_ENABLED=true`, `KTRADE_DELTA_KEY` and `KTRADE_DELTA_SECRET`, then try one cycle
+with `python -m ktrade agent-once`. Live mode needs a key from india.delta.exchange, `KTRADE_AGENT_MODE=live` **and**
+`KTRADE_AGENT_LIVE_CONFIRM="I accept that I can lose this money"`. With 5% risk and 10x leverage, a losing streak
+can halve the account in days. Only use money you can afford to lose.
 
 ## Research: why these rules
 
@@ -147,6 +175,7 @@ Set `KTRADE_CLAUDE_WEB=false` to disable web search, or `KTRADE_CLAUDE_MODEL` to
 | `ktrade/engine.py` | the loop that ties it together |
 | `ktrade/options.py` | the options book: contract choice, sizing by premium, exits |
 | `ktrade/history.py`, `ktrade/backtest.py`, `scripts/research.py` | historical data, portfolio backtest and the research report |
+| `ktrade/exchange.py`, `ktrade/agent.py` | the Claude agent: signed Delta client, guard, Claude call, hourly loop |
 | `ktrade/app.py`, `ktrade/static/index.html` | read-only dashboard |
 
 ## Legal notes (India)
@@ -154,7 +183,7 @@ Set `KTRADE_CLAUDE_WEB=false` to disable web search, or `KTRADE_CLAUDE_MODEL` to
 Crypto derivatives on FIU-registered exchanges such as Delta Exchange India are accessible to Indian
 residents. Crypto profits are taxed at 30% with no loss set-off, plus 1% TDS on transfers. Offering trading
 signals or managing other people's money can require SEBI or other registration depending on the asset and
-the service. This project only simulates trades on public prices. Check the rules that apply to you before
+the service. The paper books only simulate trades; the agent can trade real money if you enable live mode. Check the rules that apply to you before
 trading real money.
 
 ## License

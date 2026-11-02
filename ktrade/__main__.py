@@ -2,6 +2,8 @@
     python -m ktrade run     # trading loop + dashboard on http://127.0.0.1:8060
     python -m ktrade once    # one full scan + decision cycle now, then print the books
     python -m ktrade scan    # just show what the scanner would hand to Claude
+    python -m ktrade agent-once    # the Claude agent decides and acts right now (demo or live, per .env)
+    python -m ktrade agent-reset   # clear an agent halt after the account floor was hit
 """
 import argparse
 import json
@@ -30,6 +32,8 @@ def run(s: Settings, engine: Engine) -> None:
     from ktrade.app import create_app
     server = uvicorn.Server(uvicorn.Config(create_app(engine, engine.ledger, s), host=s.host, port=s.port, log_level="warning"))
     threading.Thread(target=server.run, daemon=True).start()
+    if s.agent_enabled:
+        threading.Thread(target=run_agent, args=(s, engine), daemon=True).start()
     log.info("dashboard on http://%s:%d | paper equity per book $%.0f | Claude model %s", s.host, s.port, s.start_equity, s.claude_model)
     failures = 0
     while True:
@@ -46,9 +50,36 @@ def run(s: Settings, engine: Engine) -> None:
         time.sleep(TICK_SECONDS)
 
 
+def run_agent(s: Settings, engine: Engine) -> None:
+    """The Claude agent book in its own loop, so a slow Claude call never delays the other books' stops."""
+    from ktrade.agent import AgentLoop
+    from ktrade.exchange import ExchangeError
+    try:
+        agent = AgentLoop(s, engine.ledger, engine.delta)
+    except ExchangeError as e:
+        log.error("agent not started: %s", e)
+        engine.status["agent"] = {"enabled": False, "error": str(e)}
+        return
+    engine.status["agent"] = agent.status
+    log.info("Claude agent running in %s mode", "LIVE (real money)" if agent.trader.is_live else "DEMO (Delta testnet)")
+    failures = 0
+    while True:
+        try:
+            agent.tick()
+            failures, agent.status["error"] = 0, None
+        except ExchangeError as e:
+            failures += 1
+            agent.status["error"] = str(e)
+            if failures <= 3 or failures % 20 == 0:
+                log.warning("agent: exchange unavailable (%d in a row): %s", failures, e)
+        except Exception:
+            log.exception("agent tick failed")
+        time.sleep(TICK_SECONDS)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="ktrade", description="Claude-vs-rules crypto paper trading on Delta Exchange India")
-    p.add_argument("command", choices=["run", "once", "scan"])
+    p.add_argument("command", choices=["run", "once", "scan", "agent-once", "agent-reset"])
     p.add_argument("--env", default=".env")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
@@ -63,6 +94,16 @@ def main(argv=None) -> int:
                   f"ATR {c['atr_pct']:.2f}%  24h {c['ret_24h_pct']:+.1f}%  7d {c['ret_7d_pct']:+.1f}%")
         return 0
     engine = build(s)
+    if a.command in ("agent-once", "agent-reset"):
+        from ktrade.agent import AgentLoop, reset_halt
+        if a.command == "agent-reset":
+            reset_halt(engine.ledger)
+            print("agent halt cleared")
+            return 0
+        agent = AgentLoop(s, engine.ledger, engine.delta)
+        agent.cycle(agent.context())
+        print(json.dumps(agent.tick(), indent=1, default=str))
+        return 0
     if a.command == "once":
         st = engine.tick(force_cycle=True)
         print(json.dumps({"books": st["books"], "council": st.get("council"), "positions": st.get("positions")}, indent=1, default=str))
