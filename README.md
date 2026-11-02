@@ -64,9 +64,17 @@ because the premium decays; the paper results will show whether that holds.
 A separate book where Claude decides everything (which coin, direction, size, leverage, stop, target, when to exit),
 on a real Delta Exchange India account. It is off by default and starts on the **demo** (testnet) exchange.
 
+Three Claude roles run side by side, each a separate headless `claude -p` call with one job:
+
+| Role | When | What it does |
+|---|---|---|
+| **News desk** | every 30 min | searches the web for crypto news, SEC and regulation, inflation and the Fed, war and politics, and stocks; writes a brief (risk-on / neutral / risk-off, headlines, coming events) and can wake the trader early when something big breaks |
+| **Trader** | every hour, or when woken | reads the brief, the account, its positions and the scanner's coin table; opens, closes or moves stops |
+| **Risk watcher** | when a held coin moves 1.5% within 15 min | finds out why and may close or tighten the stop; it can never open a trade |
+
 ```
-every 30 s   read the account; if equity ≤ the floor, close everything and halt
-every hour   scanner (1-hour bars) → candidates + open positions + recent decisions → Claude → actions
+every 30 s   read the account; if equity ≤ the floor, close everything and halt; check held coins for sharp moves
+every hour   scanner (1-hour bars) → candidates + positions + news brief + recent decisions → Claude → actions
              open / close / move_stop, each checked by a guard in code before anything is sent
 ```
 
@@ -77,8 +85,10 @@ every hour   scanner (1-hour bars) → candidates + open positions + recent deci
 - **Every position carries a stop held by the exchange** (bracket order), so a sleeping Mac or a crash cannot
   leave it unprotected. If the exchange refuses the stop, the position is closed at once. Stops only tighten.
 - Only coins whose Delta price tracks the real market are allowed (testnet prices for thin coins can drift).
-- Every decision and every refusal goes to the decision log; the dashboard shows the account, Claude's latest
-  view, positions with their exchange stops and liquidation prices, and the countdown to the next decision.
+- Every decision, refusal, hold and news brief goes to the decision log. The dashboard (http://127.0.0.1:8060)
+  shows the account, the three roles, Claude's latest decision, positions with their exchange stops and liquidation
+  prices, the news brief, and **uptime**: when it first started, every restart, every resume after the Mac slept,
+  every network outage, total alive time and a 24-hour timeline. The paper books are at `/lab`.
 
 Setup: create an API key on [demo.delta.exchange](https://demo.delta.exchange) (trading permission, your IP
 whitelisted), set `KTRADE_AGENT_ENABLED=true`, `KTRADE_DELTA_KEY` and `KTRADE_DELTA_SECRET`, then try one cycle
@@ -175,8 +185,9 @@ Set `KTRADE_CLAUDE_WEB=false` to disable web search, or `KTRADE_CLAUDE_MODEL` to
 | `ktrade/engine.py` | the loop that ties it together |
 | `ktrade/options.py` | the options book: contract choice, sizing by premium, exits |
 | `ktrade/history.py`, `ktrade/backtest.py`, `scripts/research.py` | historical data, portfolio backtest and the research report |
-| `ktrade/exchange.py`, `ktrade/agent.py` | the Claude agent: signed Delta client, guard, Claude call, hourly loop |
-| `ktrade/app.py`, `ktrade/static/index.html` | read-only dashboard |
+| `ktrade/exchange.py`, `ktrade/agent.py` | the Claude agent: signed Delta client, guard, news desk, trader, risk watcher |
+| `ktrade/uptime.py` | alive time, restarts, sleeps and network outages for the dashboard |
+| `ktrade/app.py`, `ktrade/static/` | read-only dashboard: agent at `/`, paper books at `/lab` |
 
 ## Legal notes (India)
 

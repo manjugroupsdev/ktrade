@@ -62,6 +62,8 @@ def run_agent(s: Settings, engine: Engine) -> None:
         return
     engine.status["agent"] = agent.status
     log.info("Claude agent running in %s mode", "LIVE (real money)" if agent.trader.is_live else "DEMO (Delta testnet)")
+    threading.Thread(target=run_news, args=(agent,), daemon=True).start()
+    threading.Thread(target=run_heartbeat, args=(agent, engine.ledger), daemon=True).start()
     failures = 0
     while True:
         try:
@@ -75,6 +77,28 @@ def run_agent(s: Settings, engine: Engine) -> None:
         except Exception:
             log.exception("agent tick failed")
         time.sleep(TICK_SECONDS)
+
+
+def run_heartbeat(agent, ledger) -> None:
+    """Uptime beats on their own thread, so a long Claude call is not mistaken for the Mac sleeping."""
+    from ktrade.uptime import Uptime
+    up = Uptime(ledger)
+    while True:
+        try:
+            up.beat(online=not agent.status.get("error"))
+        except Exception:
+            log.exception("uptime beat failed")
+        time.sleep(TICK_SECONDS)
+
+
+def run_news(agent) -> None:
+    """The news desk on its own thread: its web research takes minutes and must not delay the risk checks."""
+    while True:
+        try:
+            agent.news_tick()
+        except Exception:
+            log.exception("news desk failed")
+        time.sleep(60)
 
 
 def main(argv=None) -> int:
@@ -101,6 +125,9 @@ def main(argv=None) -> int:
             print("agent halt cleared")
             return 0
         agent = AgentLoop(s, engine.ledger, engine.delta)
+        print("news desk researching (a few minutes)...", flush=True)
+        b = agent.news_tick(force=True)
+        print(json.dumps(b, indent=1, default=str) if b else "news desk failed, see the log", flush=True)
         agent.cycle(agent.context())
         print(json.dumps(agent.tick(), indent=1, default=str))
         return 0

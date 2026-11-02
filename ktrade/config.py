@@ -70,6 +70,8 @@ class Settings:
     agent_max_stop_pct: float = 8.0
     agent_cycle_minutes: int = 60
     agent_max_venue_deviation_pct: float = 0.5   # skip coins whose exchange price disagrees with the real market
+    agent_news_minutes: int = 30           # the news desk researches the web this often
+    agent_shock_pct: float = 1.5           # a held coin moving this much within 15 min wakes the risk watcher
 
     # Claude CLI (uses your own Claude subscription/login)
     claude_bin: str = "claude"

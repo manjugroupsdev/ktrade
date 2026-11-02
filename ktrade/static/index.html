@@ -3,384 +3,300 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ktrade · Claude vs Rules</title>
+<title>ktrade agent</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   :root {
-    --bg:#f4f5f8; --panel:#ffffff; --panel2:#f9fafc; --ink:#111318; --dim:#5d6573; --faint:#8a93a2; --line:#e4e7ec;
-    --ai:#7a5af8; --ai-soft:rgba(122,90,248,.12); --rules:#0e9f8a; --rules-soft:rgba(14,159,138,.12); --opt:#c27803; --opt-soft:rgba(194,120,3,.12);
-    --up:#0a8f4e; --down:#d33b3b; --up-soft:rgba(10,143,78,.12); --down-soft:rgba(211,59,59,.12); --warn:#b56b00;
-    --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.05);
+    --bg:#f6f7f9; --panel:#fff; --sunk:#f2f4f7; --ink:#101318; --dim:#5b6472; --faint:#8b94a3; --line:#e6e8ec;
+    --accent:#5b5bd6; --accent-soft:rgba(91,91,214,.10);
+    --up:#0b8a4f; --up-soft:rgba(11,138,79,.10); --down:#d13b3b; --down-soft:rgba(209,59,59,.10); --warn:#b26a00; --warn-soft:rgba(178,106,0,.12);
+    --off:#d5d9e0;
   }
   @media (prefers-color-scheme: dark) { :root {
-    --bg:#0b0d11; --panel:#14171d; --panel2:#181c23; --ink:#eef1f5; --dim:#a3acba; --faint:#717b8b; --line:#252a33;
-    --ai:#9d86ff; --ai-soft:rgba(157,134,255,.14); --rules:#33c9b2; --rules-soft:rgba(51,201,178,.13); --opt:#fbbf24; --opt-soft:rgba(251,191,36,.12);
-    --up:#3ed58a; --down:#ff6b6b; --up-soft:rgba(62,213,138,.13); --down-soft:rgba(255,107,107,.13); --warn:#ffb547;
-    --shadow:none; } }
+    --bg:#0c0e12; --panel:#14171c; --sunk:#1a1e24; --ink:#eef0f4; --dim:#a2abb8; --faint:#6f7988; --line:#232831;
+    --accent:#8b8bff; --accent-soft:rgba(139,139,255,.13);
+    --up:#3fd18a; --up-soft:rgba(63,209,138,.12); --down:#ff6b6b; --down-soft:rgba(255,107,107,.12); --warn:#ffb547; --warn-soft:rgba(255,181,71,.13);
+    --off:#2b313b; } }
   * { box-sizing:border-box }
-  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased }
-  main { max-width:1240px; margin:0 auto; padding:18px 16px 56px }
-  .num { font-variant-numeric:tabular-nums }
-  .up { color:var(--up) } .down { color:var(--down) } .dim { color:var(--dim) } .faint { color:var(--faint) }
-  header { display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:18px }
-  .brand { display:flex; align-items:center; gap:10px } .logo { width:34px; height:34px; border-radius:10px; background:linear-gradient(135deg,var(--ai),var(--rules)); display:grid; place-items:center; color:#fff; font-weight:800 }
-  .brand h1 { font-size:18px; margin:0; letter-spacing:-.01em } .brand p { margin:0; font-size:12px; color:var(--dim) }
-  .pills { display:flex; gap:8px; flex-wrap:wrap }
-  .pill { display:inline-flex; align-items:center; gap:7px; background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:12px; color:var(--dim) }
-  .pill b { color:var(--ink); font-weight:600 } .dot { width:8px; height:8px; border-radius:50%; flex:none }
-  .live .dot { background:var(--up); box-shadow:0 0 0 0 var(--up-soft); animation:pulse 2s infinite }
-  @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(10,143,78,.45) } 70% { box-shadow:0 0 0 8px rgba(10,143,78,0) } 100% { box-shadow:0 0 0 0 rgba(10,143,78,0) } }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:var(--shadow); min-width:0 }
-  .card h2 { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:0 0 14px; display:flex; justify-content:space-between; align-items:center; gap:10px }
-  .grid { display:grid; gap:14px } .mt { margin-top:14px }
-  .cols-2 { grid-template-columns:repeat(auto-fit,minmax(340px,1fr)) }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased }
+  main { max-width:1200px; margin:0 auto; padding:20px 16px 64px }
+  a { color:var(--accent); text-decoration:none } a:hover { text-decoration:underline }
+  .num { font-variant-numeric:tabular-nums } .up { color:var(--up) } .down { color:var(--down) } .dim { color:var(--dim) } .faint { color:var(--faint) }
+  .grid { display:grid; gap:16px } .mt { margin-top:16px }
+  .g4 { grid-template-columns:repeat(4,minmax(0,1fr)) } .g3 { grid-template-columns:repeat(3,minmax(0,1fr)) } .g2 { grid-template-columns:repeat(2,minmax(0,1fr)) }
+  .main2 { grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) }
+  @media (max-width:980px) { .g4 { grid-template-columns:repeat(2,minmax(0,1fr)) } .g3,.g2,.main2 { grid-template-columns:1fr } }
+  @media (max-width:520px) { .g4 { grid-template-columns:1fr } }
 
-  /* scoreboard */
-  .score { display:grid; grid-template-columns:1fr auto 1fr; gap:0; padding:0; overflow:hidden }
-  .side { padding:20px 22px } .side.ai { background:linear-gradient(180deg,var(--ai-soft),transparent 70%) } .side.rules { background:linear-gradient(180deg,var(--rules-soft),transparent 70%) }
-  .who { display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px } .who small { font-weight:500; color:var(--dim) }
-  .equity { font-size:38px; font-weight:750; letter-spacing:-.02em; margin:8px 0 2px }
-  .chg { font-size:14px; font-weight:600 } .chg span { font-weight:500; color:var(--dim) }
-  .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px 10px; margin-top:16px }
-  .stat { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.05em } .stat b { display:block; font-size:16px; color:var(--ink); text-transform:none; letter-spacing:0; margin-top:2px; font-weight:650 }
-  .vs { display:grid; place-items:center; padding:0 6px; border-left:1px solid var(--line); border-right:1px solid var(--line); background:var(--panel2) }
-  .vs div { writing-mode:vertical-rl; transform:rotate(180deg); font-size:11px; letter-spacing:.3em; color:var(--faint); font-weight:700 }
-  .lead { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:12px 18px; border-top:1px solid var(--line); grid-column:1/-1; background:var(--panel2); font-size:13px }
-  .meter { flex:1 1 220px; height:8px; border-radius:999px; background:var(--rules-soft); overflow:hidden; max-width:360px } .meter i { display:block; height:100%; background:var(--ai); border-radius:999px; transition:width .6s }
+  header { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:20px }
+  .brand { display:flex; align-items:center; gap:12px } .brand b { font-size:17px; letter-spacing:-.01em } .brand span { color:var(--dim); font-size:13px }
+  .logo { width:32px; height:32px; border-radius:9px; background:var(--accent); color:#fff; display:grid; place-items:center; font-weight:800 }
+  .right { display:flex; align-items:center; gap:10px; flex-wrap:wrap }
+  .chip { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--line); background:var(--panel); border-radius:999px; padding:5px 12px; font-size:12.5px; color:var(--dim); white-space:nowrap }
+  .chip b { color:var(--ink); font-weight:600 }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--faint) }
+  .ok .dot { background:var(--up); animation:pulse 2s infinite } .bad .dot { background:var(--down) } .warn .dot { background:var(--warn) }
+  @keyframes pulse { 0% { box-shadow:0 0 0 0 var(--up-soft) } 70% { box-shadow:0 0 0 7px transparent } 100% { box-shadow:0 0 0 0 transparent } }
+  .badge { font-size:11px; font-weight:700; letter-spacing:.06em; padding:3px 8px; border-radius:6px; background:var(--warn-soft); color:var(--warn) }
+  .badge.live { background:var(--down-soft); color:var(--down) }
 
-  /* charts */
-  .tabs { display:inline-flex; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:3px }
-  .tabs button { border:0; background:transparent; color:var(--dim); font:inherit; font-size:12px; padding:4px 10px; border-radius:7px; cursor:pointer }
-  .tabs button.on { background:var(--panel); color:var(--ink); box-shadow:var(--shadow) }
-  .chart { height:280px } .legend { display:flex; gap:14px; font-size:12px; color:var(--dim); margin-top:8px } .legend i { display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:6px }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; min-width:0 }
+  .card h2 { margin:0 0 12px; font-size:12px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.07em; display:flex; justify-content:space-between; align-items:center; gap:8px }
+  .card h2 small { text-transform:none; letter-spacing:0; font-weight:500; color:var(--faint) }
+  .kpi .v { font-size:28px; font-weight:700; letter-spacing:-.02em; line-height:1.15 } .kpi .s { font-size:12.5px; color:var(--dim); margin-top:4px }
+  .banner { border-radius:12px; padding:11px 14px; margin-bottom:16px; font-size:13.5px; background:var(--down-soft); color:var(--down) } .banner.warn { background:var(--warn-soft); color:var(--warn) }
+  .empty { color:var(--faint); font-size:13px; padding:6px 0 }
 
-  /* positions */
-  .poss { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)) }
-  .pos { border:1px solid var(--line); border-radius:14px; padding:14px; background:var(--panel2) }
-  .pos-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px }
-  .coin { font-weight:700; font-size:15px } .tag { font-size:11px; font-weight:600; padding:2px 8px; border-radius:6px; margin-left:6px }
-  .tag.long { background:var(--up-soft); color:var(--up) } .tag.short { background:var(--down-soft); color:var(--down) }
-  .tag.ai { background:var(--ai-soft); color:var(--ai) } .tag.baseline { background:var(--rules-soft); color:var(--rules) } .tag.options { background:var(--opt-soft); color:var(--opt) }
-  .agent-card { border-color:var(--ai); box-shadow:0 0 0 1px var(--ai-soft),var(--shadow) }
-  .badge { font-size:11px; font-weight:700; padding:3px 9px; border-radius:6px; letter-spacing:.06em } .badge.demo { background:var(--opt-soft); color:var(--opt) } .badge.live { background:var(--down); color:#fff }
-  .banner { padding:10px 14px; border-radius:10px; margin-bottom:12px; font-size:13px } .banner.bad { background:var(--down-soft); color:var(--down) }
-  .agent-top { display:grid; grid-template-columns:minmax(220px,1fr) 2fr; gap:18px } @media (max-width:760px) { .agent-top { grid-template-columns:1fr } }
-  .tag.agent { background:var(--ai); color:#fff }
-  .side.opt { background:linear-gradient(180deg,var(--opt-soft),transparent 70%); border-radius:16px }
-  .pnl { font-size:18px; font-weight:700; text-align:right } .pnl small { display:block; font-size:11px; font-weight:500; color:var(--dim) }
-  .ruler { position:relative; height:6px; border-radius:999px; background:linear-gradient(90deg,var(--down-soft),var(--line) 50%,var(--up-soft)); margin:22px 2px 8px }
-  .ruler .mk { position:absolute; top:-4px; width:2px; height:14px; background:var(--faint) } .ruler .now { position:absolute; top:-5px; width:16px; height:16px; margin-left:-8px; border-radius:50%; border:3px solid var(--panel); box-shadow:0 0 0 1px var(--line) }
-  .ruler label { position:absolute; top:-20px; font-size:10px; color:var(--faint); transform:translateX(-50%); white-space:nowrap }
-  .pos-meta { display:flex; justify-content:space-between; font-size:11px; color:var(--dim); margin-top:14px } .why { font-size:12px; color:var(--dim); margin-top:8px; line-height:1.4 }
+  .agent { display:flex; gap:12px; align-items:flex-start }
+  .agent .ic { width:34px; height:34px; border-radius:9px; display:grid; place-items:center; flex:none; background:var(--accent-soft); color:var(--accent); font-size:16px }
+  .agent b { display:block; font-size:14px } .agent p { margin:2px 0 0; font-size:12.5px; color:var(--dim) }
+  .agent .when { font-size:12px; color:var(--faint); margin-top:6px }
 
-  /* lists */
-  table { width:100%; border-collapse:collapse } th,td { text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:top } th { color:var(--faint); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.05em }
-  tr:last-child td { border-bottom:0 } .scroll { overflow-x:auto }
-  .bar { position:relative; height:6px; width:90px; border-radius:999px; background:var(--line); display:inline-block; vertical-align:middle } .bar i { position:absolute; top:0; bottom:0; border-radius:999px }
-  .decision { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; padding:10px 0; border-bottom:1px solid var(--line) } .decision:last-child { border-bottom:0 }
-  .act { font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; text-transform:uppercase; height:max-content } .act.long { background:var(--up-soft); color:var(--up) } .act.short { background:var(--down-soft); color:var(--down) } .act.skip { background:var(--panel2); color:var(--faint); border:1px solid var(--line) }
-  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px } .chip { font-size:11px; padding:3px 9px; border-radius:999px; background:var(--panel2); border:1px solid var(--line); color:var(--dim) }
-  .view { font-size:14px; line-height:1.55; padding:12px 14px; border-radius:12px; background:var(--ai-soft); margin-bottom:6px }
-  .empty { color:var(--faint); font-size:13px; padding:18px 0; text-align:center }
-  .research td.pick { font-weight:700 } .research tr.pick td { background:var(--rules-soft) }
-  .note { font-size:12px; color:var(--dim); margin-top:10px; line-height:1.5 }
-  details summary { cursor:pointer; color:var(--dim); font-size:13px; font-weight:600 }
-  footer { margin-top:26px; font-size:12px; color:var(--faint); line-height:1.5 }
-  @media (max-width:760px) {
-    .score { grid-template-columns:1fr } .vs { display:none } .side.rules { border-top:1px solid var(--line) }
-    .stats { grid-template-columns:repeat(2,minmax(0,1fr)) } .equity { font-size:32px } .cols-2 { grid-template-columns:1fr }
-  }
+  .tag { display:inline-block; align-self:flex-start; white-space:nowrap; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; padding:2px 7px; border-radius:5px; background:var(--sunk); color:var(--dim) }
+  .tag.long,.tag.bullish,.tag.risk_on { background:var(--up-soft); color:var(--up) } .tag.short,.tag.bearish,.tag.risk_off { background:var(--down-soft); color:var(--down) }
+  .quote { background:var(--sunk); border-radius:10px; padding:12px 14px; font-size:13.5px; line-height:1.55 }
+  .item { display:flex; gap:10px; padding:10px 0; border-top:1px solid var(--line) } .item:first-child { border-top:0 }
+  .item .t { font-size:13.5px } .item .m { font-size:12px; color:var(--faint); margin-top:2px }
+
+  table { width:100%; border-collapse:collapse; font-size:13px } th { text-align:left; font-weight:500; color:var(--faint); font-size:12px; padding:0 10px 8px 0 }
+  td { padding:9px 10px 9px 0; border-top:1px solid var(--line); vertical-align:top } .scroll { overflow-x:auto }
+
+  .seg { display:flex; gap:2px; background:var(--sunk); border-radius:8px; padding:2px }
+  .seg button { border:0; background:none; color:var(--dim); font:inherit; font-size:12px; padding:3px 9px; border-radius:6px; cursor:pointer } .seg button.on { background:var(--panel); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.08) }
+
+  .bar { position:relative; height:26px; border-radius:7px; background:var(--off); overflow:hidden }
+  .bar i { position:absolute; top:0; bottom:0; background:var(--up) } .bar i.offline { background:var(--warn) }
+  .ticks { position:relative; height:18px; font-size:11px; color:var(--faint) } .ticks span { position:absolute; transform:translateX(-50%); top:3px; white-space:nowrap }
+  .legend { display:flex; gap:14px; font-size:12px; color:var(--dim); margin-top:6px } .legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:14px; margin-bottom:16px }
+  .stats div { font-size:12px; color:var(--faint) } .stats b { display:block; color:var(--ink); font-size:16px; font-weight:650; margin-top:2px }
+  .ev { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; padding:7px 0; border-top:1px solid var(--line); font-size:13px } .ev:first-child { border-top:0 }
+  .ev .d { width:8px; height:8px; border-radius:50% } .ev .start,.ev .online,.ev .resume { background:var(--up) } .ev .restart { background:var(--accent) } .ev .offline { background:var(--warn) } .ev .stop { background:var(--down) }
+  .caps { display:flex; flex-wrap:wrap; gap:8px }
+  footer { margin-top:28px; font-size:12px; color:var(--faint); text-align:center }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <div class="brand"><div class="logo">k</div><div><h1>ktrade</h1><p>Claude vs Rules · paper trading on Delta Exchange India prices</p></div></div>
-    <div class="pills"><span id="health" class="pill"><span class="dot"></span>connecting…</span><span id="next" class="pill"></span><span id="rules" class="pill"></span></div>
+    <div class="brand"><div class="logo">k</div><div><b>ktrade agent</b><br><span>Claude trades a Delta Exchange account inside hard limits</span></div></div>
+    <div class="right">
+      <span id="mode" class="badge">DEMO</span>
+      <span id="state" class="chip"><span class="dot"></span><b>Connecting…</b></span>
+      <span class="chip">IST <b id="clock" class="num">–</b></span>
+      <a class="chip" href="/lab">Paper lab →</a>
+    </div>
   </header>
+  <div id="banners"></div>
 
-  <section class="card agent-card"><h2><span>Claude agent <span id="amode" class="badge demo">DEMO</span></span><span class="faint" id="anext"></span></h2><div id="agent"></div></section>
-
-  <section class="card score mt" id="score">
-    <div class="side ai" id="ai"></div><div class="vs"><div>VERSUS</div></div><div class="side rules" id="baseline"></div>
-    <div class="lead" id="lead"></div>
+  <section class="grid g4">
+    <div class="card kpi"><h2>Account</h2><div class="v num" id="k-eq">–</div><div class="s num" id="k-eq-s"></div></div>
+    <div class="card kpi"><h2>Today</h2><div class="v num" id="k-day">–</div><div class="s num" id="k-day-s"></div></div>
+    <div class="card kpi"><h2>Next decision</h2><div class="v num" id="k-next">–</div><div class="s" id="k-next-s"></div></div>
+    <div class="card kpi"><h2>Alive</h2><div class="v num" id="k-alive">–</div><div class="s num" id="k-alive-s"></div></div>
   </section>
 
-  <section class="card mt" style="padding:0"><div class="side opt" id="options"></div></section>
+  <section class="grid g3 mt" id="agents"></section>
 
-  <section class="card mt">
-    <h2>Equity <span class="tabs" id="range"><button data-h="24">24h</button><button data-h="168" class="on">7d</button><button data-h="0">All</button></span></h2>
-    <div id="eqchart" class="chart"></div>
-    <div class="legend"><span><i style="background:var(--ai)"></i>Claude</span><span><i style="background:var(--rules)"></i>Rules</span><span><i style="background:var(--opt)"></i>Options</span></div>
+  <section class="grid main2 mt">
+    <div class="card"><h2>Equity <div class="seg" id="range"><button data-h="24">24h</button><button data-h="168" class="on">7d</button><button data-h="0">All</button></div></h2><div id="chart" style="height:260px"></div></div>
+    <div class="card"><h2>Latest decision <small id="dec-at"></small></h2><div id="decision"></div></div>
   </section>
 
-  <section class="card mt"><h2>Open positions <span class="faint" id="openrisk"></span></h2><div id="positions" class="poss"></div></section>
+  <section class="card mt"><h2>Open positions <small>stops and targets are held by the exchange</small></h2><div id="positions" class="scroll"></div></section>
 
-  <div class="grid cols-2 mt">
-    <section class="card"><h2>Claude's latest call <span class="faint" id="cost"></span></h2><div id="council"></div></section>
-    <section class="card"><h2>Market scan <span class="faint" id="scanat"></span></h2><div id="scan"></div></section>
-  </div>
+  <section class="grid g2 mt">
+    <div class="card"><h2>News desk <small id="news-at"></small></h2><div id="news"></div></div>
+    <div class="card"><h2>Headlines</h2><div id="headlines"></div></div>
+  </section>
 
-  <section class="card mt"><h2>Closed trades <span class="tabs" id="tfilter"><button data-b="" class="on">All</button><button data-b="ai">Claude</button><button data-b="baseline">Rules</button><button data-b="options">Options</button></span></h2><div class="scroll" id="trades"></div></section>
+  <section class="card mt"><h2>Uptime <small>last 24 hours</small></h2><div id="uptime"></div></section>
 
-  <section class="card mt"><h2>Proof: this exact code, replayed on history <span class="faint" id="pdate"></span></h2><div id="proof"></div></section>
+  <section class="card mt"><h2>Activity <small>every decision, refusal and error</small></h2><div id="activity" class="scroll"></div></section>
 
-  <section class="card mt research"><h2>Why these rules: 6 years of history <span class="faint" id="rdate"></span></h2><div id="research"></div></section>
+  <section class="card mt"><h2>Hard limits <small>set in .env, Claude cannot change them</small></h2><div id="caps" class="caps"></div></section>
 
-  <section class="card mt"><details><summary>Decision log (every idea, including refusals)</summary><div class="scroll mt" id="decisions"></div></details></section>
-
-  <footer>Both books share one risk engine and the same exits; only the entry idea differs. Results include fees (0.05% + GST), slippage and funding.
-    Paper trading only. Past results, simulated or historical, do not predict future returns. Not financial advice.</footer>
+  <footer>Not financial advice. Leveraged crypto futures can lose money quickly. Keep the Mac plugged in with the lid open.</footer>
 </main>
+
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const money = (v, sign) => v == null ? "–" : (sign && v > 0 ? "+" : v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
-const pct = (v, d = 2) => v == null ? "–" : (v > 0 ? "+" : "") + v.toFixed(d) + "%";
+const money = (v, sign) => v == null ? "–" : (sign && v > 0 ? "+" : v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const pct = v => (v > 0 ? "+" : "") + v.toFixed(2) + "%";
 const cls = v => v > 0 ? "up" : v < 0 ? "down" : "";
-const px = v => v == null ? "–" : (+v).toPrecision(6).replace(/\.?0+$/, "");
+const px = v => v == null || v === 0 ? "–" : (+v).toPrecision(6).replace(/\.?0+$/, "");
+const coin = s => String(s || "").replace(/USD$/, "");
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const dur = s => s < 60 ? Math.round(s) + "s" : s < 3600 ? Math.round(s / 60) + "m" : s < 86400 ? Math.floor(s / 3600) + "h " + Math.round(s % 3600 / 60) + "m" : (s / 86400).toFixed(1) + "d";
-const ist = t => new Date(t * 1000).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"});
-const bookName = b => b === "agent" ? "Claude agent" : b === "ai" ? "Claude" : b === "options" ? "Options" : "Rules";
-// C-BTC-80000-131126 → "BTC call 80,000 · 13 Nov"
-const optLabel = sym => { const [k, u, strike, d] = sym.split("-"); const dt = new Date(Date.UTC(2000 + +d.slice(4), +d.slice(2, 4) - 1, +d.slice(0, 2)));
-  return `${u} ${k === "C" ? "call" : "put"} ${(+strike).toLocaleString()} · ${dt.toLocaleDateString("en-IN", {day: "2-digit", month: "short", timeZone: "UTC"})}`; };
-const coinLabel = sym => /^[CP]-/.test(sym) ? optLabel(sym) : sym.replace(/USD$/, "");
-const expiryOf = sym => { const d = sym.split("-")[3]; return Date.UTC(2000 + +d.slice(4), +d.slice(2, 4) - 1, +d.slice(0, 2), 12) / 1000; };
-let range = 168, tbook = "", charts = {};
+const now = () => Date.now() / 1000;
+const ist = (t, o = {}) => new Date(t * 1000).toLocaleString("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, ...o});
+const hm = t => new Date(t * 1000).toLocaleTimeString("en-IN", {timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false});
+function span(s) {                                    // 3d 4h 12m · 4h 12m · 12m 05s
+  s = Math.max(0, Math.floor(s)); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m ${String(x).padStart(2, "0")}s`;
+}
+const ago = t => t ? span(now() - t) + " ago" : "–";
 
 async function api(path) {
   const r = await fetch(path, {headers: {"X-Panel-Token": localStorage.getItem("ktrade-token") || ""}, cache: "no-store"});
   if (r.status === 401) { const t = prompt("Panel token (KTRADE_PANEL_TOKEN in .env):"); if (t) { localStorage.setItem("ktrade-token", t.trim()); return api(path); } }
-  if (!r.ok) throw new Error(path + " → " + r.status);
+  if (!r.ok) throw new Error(path + " " + r.status);
   return r.json();
 }
 
-function makeChart(el, height) {
-  if (!window.LightweightCharts) return null;
-  const c = LightweightCharts.createChart(el, {height, layout: {background: {type: "solid", color: "transparent"}, textColor: css("--dim"), fontSize: 11},
-    grid: {vertLines: {visible: false}, horzLines: {color: css("--line")}}, rightPriceScale: {borderVisible: false},
-    timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false, minBarSpacing: 0.01}, crosshair: {mode: 0}, handleScroll: false, handleScale: false,
-    localization: {priceFormatter: v => "$" + v.toFixed(2), timeFormatter: t => ist(t)}});
-  new ResizeObserver(() => { c.applyOptions({width: el.clientWidth}); c.timeScale().fitContent(); }).observe(el);
-  return c;
-}
-function line(chart, color, data) {
-  const s = chart.addLineSeries({color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true});
-  const seen = new Set(); s.setData(data.filter(([t]) => !seen.has(t) && seen.add(t)).map(([t, v]) => ({time: Math.floor(t), value: v})));
-  return s;
+let S = {}, U = {}, hours = 168, chart, series, lastOK = 0;
+
+// --- header and KPIs ---------------------------------------------------------------------------------
+function header() {
+  const ag = S.agent || {}, el = $("state"), b = [];
+  let st = ["ok", "Online"];
+  if (now() - lastOK > 45) st = ["bad", "Dashboard can't reach the agent"];
+  else if (!ag.enabled) st = ["bad", "Agent off"];
+  else if (ag.halted) st = ["bad", "Halted"];
+  else if (ag.error) st = ["warn", "Offline: exchange unreachable"];
+  el.className = "chip " + st[0]; el.innerHTML = `<span class="dot"></span><b>${st[1]}</b>`;
+  $("mode").textContent = ag.live ? "LIVE · REAL MONEY" : "DEMO"; $("mode").className = "badge" + (ag.live ? " live" : "");
+  if (now() - lastOK > 45) b.push(`<div class="banner">No answer from the agent for ${span(now() - lastOK)}. The service may be stopped or the Mac asleep.</div>`);
+  if (ag.enabled === false) b.push(`<div class="banner">${esc(ag.error || "The agent is off. Set KTRADE_AGENT_ENABLED=true and the Delta keys in .env.")}</div>`);
+  if (ag.halted) b.push(`<div class="banner"><b>Halted:</b> ${esc(ag.halted)}. Run <code>python -m ktrade agent-reset</code> to resume.</div>`);
+  if (ag.error) b.push(`<div class="banner warn">Exchange or network problem: ${esc(ag.error)}. Open positions keep their stops on the exchange.</div>`);
+  $("banners").innerHTML = b.join("");
 }
 
-function book(id, b, name, sub, color) {
-  if (!b) return;
-  $(id).innerHTML = `<div class="who"><span class="dot" style="background:${color}"></span>${name} <small>· ${sub}</small></div>
-    <div class="equity num">${money(b.equity)}</div>
-    <div class="chg num ${cls(b.return_pct)}">${pct(b.return_pct)} <span>total ·</span> <span class="${cls(b.today_pnl)}">${money(b.today_pnl, true)}</span> <span>today</span></div>
-    <div class="stats num">
-      <div class="stat">Closed trades<b>${b.trades}</b></div>
-      <div class="stat">Win rate<b>${b.win_rate == null ? "–" : b.win_rate + "%"}</b></div>
-      <div class="stat">Won per $1 lost<b>${b.profit_factor ?? "–"}</b></div>
-      <div class="stat">Avg trade<b class="${cls(b.avg_r)}">${b.avg_r == null ? "–" : (b.avg_r > 0 ? "+" : "") + b.avg_r + "R"}</b></div>
-      <div class="stat">Closed P/L<b class="${cls(b.net_closed)}">${money(b.net_closed, true)}</b></div>
-      <div class="stat">Worst drop<b class="${b.max_drawdown_pct < 0 ? "down" : ""}">${b.max_drawdown_pct.toFixed(2)}%</b></div>
-      <div class="stat">Open<b>${b.open} · ${money(b.open_risk)} at risk</b></div>
-      <div class="stat">Fees + funding<b>${money(-(b.fees + b.funding), true)}</b></div>
-    </div>`;
-}
-
-function positions(list) {
-  if (!list.length) { $("positions").innerHTML = '<div class="empty">No open positions. Both books are waiting for a setup.</div>'; $("openrisk").textContent = ""; return; }
-  $("positions").innerHTML = list.map(p => {
-    if (p.book === "options") {
-      const paid = p.entry * p.qty * p.contract_value, now = p.mark == null ? null : p.mark * p.qty * p.contract_value, left = (expiryOf(p.symbol) - Date.now() / 1000) / 86400;
-      const mult = now == null ? null : now / paid;
-      return `<div class="pos"><div class="pos-top"><div><span class="coin">${esc(optLabel(p.symbol))}</span><span class="tag options">Options</span>
-          <div class="faint num" style="font-size:12px;margin-top:4px">${p.qty} contracts · paid ${money(paid)} (max loss)</div></div>
-          <div class="pnl num ${cls(p.unrealized)}">${money(p.unrealized, true)}<small>${mult == null ? "–" : mult.toFixed(2) + "× premium"}</small></div></div>
-        <div class="ruler" style="background:linear-gradient(90deg,var(--down-soft),var(--opt-soft))"><span class="now" style="left:${Math.min(100, (mult ?? 0) / 3 * 100).toFixed(1)}%;background:var(--opt)"></span>
-          <label style="left:0;transform:none">0×</label><label style="left:33.3%">1× paid</label><label style="left:100%;transform:translateX(-100%)">3×</label></div>
-        <div class="pos-meta num"><span>value now ${money(now)}</span><span>${left.toFixed(1)} days to expiry</span><span>${dur(Date.now() / 1000 - p.opened_at)} open</span></div>
-        ${p.reason ? `<div class="why">${esc(p.reason)}</div>` : ""}</div>`;
-    }
-    const s = p.side_sign, entry = +p.entry, stop = +p.stop, now = +(p.mark ?? entry), tgt = p.target == null ? null : +p.target;
-    // Ruler from the stop to the furthest of (target, current price, entry + 2 x risk) in the profit direction.
-    const risk = Math.abs(entry - stop) || entry * .01, far = tgt ?? (s > 0 ? Math.max(now, entry + 2 * risk) : Math.min(now, entry - 2 * risk));
-    const lo = Math.min(stop, far, now), hi = Math.max(stop, far, now);
-    // Profit always points right: for shorts the price axis is mirrored.
-    const pos = v => (((s > 0 ? v - lo : hi - v) / ((hi - lo) || 1)) * 100).toFixed(1);
-    const pl = p.unrealized, plPct = (now - entry) / entry * 100 * s, locked = (stop - entry) * s >= 0;
-    const lab = v => { const x = +pos(v); return `left:${x}%;transform:translateX(${x < 18 ? "0" : x > 82 ? "-100%" : "-50%"})`; };
-    return `<div class="pos">
-      <div class="pos-top"><div><span class="coin">${esc(coinLabel(p.symbol))}</span><span class="tag ${p.side}">${p.side}</span><span class="tag ${p.book}">${bookName(p.book)}</span>
-        <div class="faint num" style="font-size:12px;margin-top:4px">${p.qty} contracts · in at ${px(entry)}</div></div>
-        <div class="pnl num ${cls(pl)}">${money(pl, true)}<small>${pct(plPct)}</small></div></div>
-      <div class="ruler"><span class="mk" style="left:${pos(stop)}%"></span><label style="${lab(stop)}">${locked ? "stop (profit locked)" : "stop"} ${px(stop)}</label>
-        <span class="mk" style="left:${pos(entry)}%;background:var(--ink)"></span>
-        ${tgt != null ? `<span class="mk" style="left:${pos(tgt)}%"></span><label style="${lab(tgt)}">target</label>` : ""}
-        <span class="now" style="left:${pos(now)}%;background:${pl >= 0 ? "var(--up)" : "var(--down)"}"></span></div>
-      <div class="pos-meta num"><span>now ${px(now)}</span><span>${tgt == null ? "trailing stop · no target" : "target " + px(tgt)}</span><span>${dur(Date.now() / 1000 - p.opened_at)} open</span></div>
-      ${p.reason ? `<div class="why">${esc(p.reason)}</div>` : ""}</div>`;
-  }).join("");
-  $("openrisk").textContent = list.length + " open";
-}
-
-function council(c, cost) {
-  $("cost").textContent = cost ? "$" + cost.toFixed(2) + " of Claude usage today" : "";
-  if (!c) { $("council").innerHTML = '<div class="empty">Claude is asked after each bar closes.</div>'; return; }
-  if (c.error) { $("council").innerHTML = `<div class="view down">Unavailable ${ist(c.at)}: ${esc(c.error)}</div><div class="note">The Claude book takes no new trades until Claude answers again. Exits keep working.</div>`; return; }
-  $("council").innerHTML = `<div class="view">${esc(c.market_view)}</div><div class="faint" style="font-size:12px;margin-bottom:6px">${ist(c.at)}</div>` +
-    (c.entries || []).map(e => `<div class="decision"><span class="act ${e.action}">${e.action}</span>
-      <div><b>${esc(e.symbol.replace(/USD$/, ""))}</b> <span class="bar" title="conviction"><i style="left:0;width:${e.conviction * 100}%;background:${e.conviction >= .6 ? "var(--ai)" : "var(--faint)"}"></i></span>
-      <span class="faint num">${Math.round(e.conviction * 100)}%</span><div class="dim" style="font-size:13px;margin-top:3px">${esc(e.thesis)}</div></div></div>`).join("") +
-    ((c.exits || []).filter(x => x.action === "exit").map(x => `<div class="decision"><span class="act short">exit</span><div><b>${esc(x.symbol)}</b><div class="dim">${esc(x.reason)}</div></div></div>`).join(""));
-}
-
-function scan(sc, at) {
-  $("scanat").textContent = at ? ist(at) : "";
-  const cands = (sc || {}).candidates || [];
-  if (!cands.length) { $("scan").innerHTML = '<div class="empty">No scan yet. It runs a couple of minutes after each bar closes.</div>'; return; }
-  const trendBar = t => `<span class="bar"><i style="${t >= 0 ? "left:50%" : "right:50%"};width:${Math.abs(t) * 50}%;background:${t >= 0 ? "var(--up)" : "var(--down)"}"></i></span>`;
-  $("scan").innerHTML = `<div class="scroll"><table class="num"><tr><th>Coin</th><th>Trend</th><th>Volatility</th><th>24h</th><th>7d</th><th>Volume</th></tr>${cands.map(k =>
-    `<tr><td><b>${esc(k.symbol.replace(/USD$/, ""))}</b></td><td>${trendBar(k.trend)} <span class="${cls(k.trend)}">${k.trend > 0 ? "+" : ""}${k.trend.toFixed(2)}</span></td>
-     <td>×${k.vol_ratio.toFixed(2)} <span class="faint">ATR ${k.atr_pct.toFixed(2)}%</span></td><td class="${cls(k.ret_24h_pct)}">${pct(k.ret_24h_pct, 1)}</td>
-     <td class="${cls(k.ret_7d_pct)}">${pct(k.ret_7d_pct, 1)}</td><td class="faint">$${k.turnover_musd}M</td></tr>`).join("")}</table></div>
-    <div class="chips">${(sc.too_wild || []).map(w => `<span class="chip" title="skipped: too wild">🌪 ${esc(w.symbol.replace(/USD$/, ""))} ${pct(w.ret_24h_pct, 0)}</span>`).join("")}
-      ${(sc.duplicates || []).map(d => `<span class="chip" title="skipped: same bet">⇄ ${esc(d.symbol.replace(/USD$/, ""))} = ${esc(d.same_bet_as.replace(/USD$/, ""))}</span>`).join("")}</div>
-    <div class="note">🌪 skipped as too wild (pump or crash) · ⇄ skipped as the same bet as a coin already chosen</div>`;
-}
-
-function agent(ag, curve) {
-  if (!ag || ag.enabled === false) {
-    $("agent").innerHTML = `<div class="empty">${ag && ag.error ? esc(ag.error) : "The agent is off. Set KTRADE_AGENT_ENABLED=true and the Delta keys in .env."}</div>`; return;
-  }
-  const live = !!ag.live; $("amode").textContent = live ? "LIVE · REAL MONEY" : "DEMO · Delta testnet"; $("amode").className = "badge " + (live ? "live" : "demo");
-  if (ag.next_cycle) $("anext").textContent = "next decision in " + dur(Math.max(0, ag.next_cycle - Date.now() / 1000));
+function kpis() {
+  const ag = S.agent || {}; if (ag.equity == null) return;
   const pnl = ag.equity - ag.start_equity, today = ag.equity - ag.day_start, caps = ag.caps || {};
-  const tile = (l, v, c = "") => `<div class="stat">${l}<b class="${c}">${v}</b></div>`;
-  const c = ag.claude;
-  $("agent").innerHTML = (ag.halted ? `<div class="banner bad"><b>Halted:</b> ${esc(ag.halted)}. Run <code>python -m ktrade agent-reset</code> to resume.</div>` : "") +
-    (ag.error ? `<div class="banner bad">Exchange problem: ${esc(ag.error)}</div>` : "") +
-    `<div class="agent-top"><div>
-       <div class="equity num">${money(ag.equity)}</div>
-       <div class="chg num ${cls(pnl)}">${money(pnl, true)} <span>since start (${money(ag.start_equity)}) ·</span> <span class="${cls(today)}">${money(today, true)}</span> <span>today</span></div>
-       <div class="stats num" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-         ${tile("Entries today", `${ag.entries_today} / ${caps.entries_per_day}`)}${tile("Open", `${(ag.positions || []).length} / ${caps.positions}`)}
-         ${tile("Max risk / trade", caps.risk_pct + "%")}${tile("Max leverage", caps.leverage + "×")}
-         ${tile("Daily loss stop", "−" + caps.daily_loss_pct + "%")}${tile("Halt below", money(caps.floor))}
-       </div><div id="achart" style="height:120px;margin-top:12px"></div></div>
-     <div>${(ag.positions || []).length ? `<table class="num"><tr><th>Position</th><th>Entry → now</th><th>P/L</th><th>Stop (on exchange)</th><th>Target</th><th>Liq.</th></tr>${ag.positions.map(p =>
-         `<tr><td><b>${esc(p.symbol.replace(/USD$/, ""))}</b> <span class="tag ${p.side}" style="margin:0">${p.side}</span> <span class="faint">${p.size}</span></td>
-          <td>${px(p.entry)} → ${px(p.mark)}</td><td class="${cls(p.unrealized)}"><b>${money(p.unrealized, true)}</b></td>
-          <td>${p.stop ? px(p.stop) : '<span class="down">none!</span>'}</td><td>${p.target ? px(p.target) : "–"}</td><td class="faint">${p.liquidation ? px(p.liquidation) : "–"}</td></tr>`).join("")}</table>`
-       : '<div class="empty" style="padding:8px 0">No open positions.</div>'}
-       ${c ? (c.error ? `<div class="banner bad">Claude unavailable ${ist(c.at)}: ${esc(c.error)}</div>` :
-         `<div class="view" style="margin-top:12px">${esc(c.market_view)}</div><div class="faint" style="font-size:12px">${ist(c.at)} · $${(c.cost_usd || 0).toFixed(3)} of Claude usage</div>` +
-         (c.actions || []).map(a => `<div class="decision"><span class="act ${a.type === "open" ? a.side : a.type === "close" ? "short" : "skip"}">${esc(a.type === "open" ? a.side : a.type.replace("_", " "))}</span>
-           <div><b>${esc(a.symbol.replace(/USD$/, ""))}</b> <span class="faint num">${a.type === "open" ? `risk ${a.risk_pct}% · ${a.leverage}× · stop ${px(a.stop_price)}${a.take_profit_price ? " · target " + px(a.take_profit_price) : ""}` : a.stop_price ? "stop " + px(a.stop_price) : ""}</span>
-           <div class="dim" style="font-size:13px;margin-top:3px">${esc(a.reason)}</div></div></div>`).join("") || '<div class="note">No action this hour: Claude chose to wait.</div>')
-         : '<div class="note">Claude decides a couple of minutes after each hour.</div>'}</div></div>`;
-  const ch = makeChart($("achart"), 120);
-  if (ch && curve && curve.agent && curve.agent.length) { line(ch, css("--ai"), curve.agent); ch.timeScale().fitContent(); }
+  $("k-eq").textContent = money(ag.equity);
+  $("k-eq-s").innerHTML = `<span class="${cls(pnl)}">${money(pnl, true)} (${pct(pnl / ag.start_equity * 100)})</span> since start ${money(ag.start_equity)}`;
+  $("k-day").innerHTML = `<span class="${cls(today)}">${money(today, true)}</span>`;
+  $("k-day-s").textContent = `${ag.entries_today} of ${caps.entries_per_day} entries used · ${(ag.positions || []).length} of ${caps.positions} positions open`;
+  $("k-next-s").textContent = "the trader decides every hour, sooner on breaking news";
 }
 
-async function trades() {
-  const list = await api("/api/trades?limit=200" + (tbook ? "&book=" + tbook : ""));
-  $("trades").innerHTML = list.length ? `<table class="num"><tr><th>Closed</th><th>Book</th><th>Coin</th><th>Side</th><th>Entry → exit</th><th>Held</th><th>Result</th><th>R</th><th>Why it closed</th></tr>${list.map(t =>
-    `<tr><td>${ist(t.closed_at)}</td><td><span class="tag ${t.book}" style="margin:0">${bookName(t.book)}</span></td><td><b>${esc(coinLabel(t.symbol))}</b></td>
-     <td><span class="tag ${t.side > 0 ? "long" : "short"}" style="margin:0">${t.side > 0 ? "long" : "short"}</span></td><td>${px(t.entry)} → ${px(t.exit)}</td>
-     <td>${dur(t.closed_at - t.opened_at)}</td><td class="${cls(t.net)}"><b>${money(t.net, true)}</b></td><td class="${cls(t.net)}">${t.risk ? (t.net / t.risk).toFixed(2) : "–"}</td>
-     <td class="dim">${esc(t.exit_reason)}</td></tr>`).join("")}</table>` : '<div class="empty">No closed trades yet. With 4-hour trend rules, trades last days, not hours.</div>';
+function ticking() {                                     // runs every second
+  $("clock").textContent = new Date().toLocaleTimeString("en-IN", {timeZone: "Asia/Kolkata", hour12: false});
+  const ag = S.agent || {};
+  $("k-next").textContent = ag.halted ? "halted" : ag.next_cycle ? span(ag.next_cycle - now()) : "–";
+  if (U.available) {
+    const extra = U.running ? now() - U.now : 0;
+    $("k-alive").textContent = span(U.alive_s + extra);
+    $("k-alive-s").textContent = U.running ? `this session ${span(now() - U.session_start)} · ${U.uptime_pct}% uptime since ${ist(U.first_start, {hour: undefined, minute: undefined})}`
+                                           : `agent heartbeat stopped · ${U.uptime_pct}% uptime`;
+  }
+  header();
 }
 
-function proof(rp) {
-  if (!rp) { $("proof").innerHTML = '<div class="empty">No replay yet. Run <code>python scripts/replay.py --start 2024-01-01</code>.</div>'; return; }
-  const l = rp.live_code_replay, sim = rp.research_simulator, st = rp.settings;
-  $("pdate").textContent = "run " + ist(rp.generated_at);
-  const tile = (label, v, c = "") => `<div class="stat">${label}<b class="${c}">${v}</b></div>`;
-  $("proof").innerHTML = `<p class="dim" style="margin-top:0">The live engine (the same scanner, risk engine, trailing stops, trend exits and ledger running on this Mac)
-      was replayed hour by hour from <b>${esc(rp.start)}</b> on ${rp.coins.length} Delta coins, with real contract sizes, ${(st.risk_per_trade * 100).toFixed(1)}% risk per trade,
-      fees, slippage and funding. ${rp.fills === "extreme" ? "Every stop fills at the hour's worst price (very pessimistic)." : "Stops fill where price crosses them, as the live 30-second check does; gaps fill at the open."}</p>
-    <div class="stats num" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
-      ${tile("$1,000 became", money(l.end_equity), cls(l.return_pct))}${tile("Total return", pct(l.return_pct, 1), cls(l.return_pct))}
-      ${tile("Per year", pct(l.cagr_pct, 1), cls(l.cagr_pct))}${tile("Worst drop", l.max_drawdown_pct + "%", "down")}
-      ${tile("Trades", l.trades)}${tile("Win rate", l.win_rate_pct + "%")}${tile("Won per $1 lost", l.profit_factor)}${tile("Avg trade", (l.avg_r > 0 ? "+" : "") + l.avg_r + "R", cls(l.avg_r))}
-    </div>
-    <div class="chips">${Object.entries(l.by_year).map(([y, v]) => `<span class="chip">${y}: <b class="${cls(v)}">${pct(v, 1)}</b></span>`).join("")}
-      <span class="chip">fees ${money(l.fees)} · funding ${money(l.funding)}</span></div>
-    <div id="pchart" class="chart mt" style="height:220px"></div>
-    <div class="note">Research simulator on the same window: ${pct(sim.return_pct, 1)} total, worst drop ${sim.max_drawdown_pct}%, ${sim.trades} trades.
-      Two independent implementations agreeing is the evidence that the live bot runs the researched strategy.
-      History is not a promise: the coming weeks of paper trading are the real test.</div>`;
-  const ch = makeChart($("pchart"), 220);
-  if (ch) { line(ch, css("--rules"), rp.equity); ch.timeScale().fitContent(); }
+// --- the three agents --------------------------------------------------------------------------------
+function agents() {
+  const ag = S.agent || {}, n = ag.news, c = ag.claude, w = ag.watch, held = (ag.positions || []).length;
+  const card = (ic, name, job, when) => `<div class="card agent"><div class="ic">${ic}</div><div><b>${name}</b><p>${job}</p><div class="when">${when}</div></div></div>`;
+  $("agents").innerHTML =
+    card("◎", "News desk", "Searches crypto, SEC and regulation, inflation and the Fed, war and politics, and stocks.",
+         ag.news_error ? `<span class="down">${esc(ag.news_error)}</span>` : n ? `Brief ${ago(n.at)} · next in ${span(n.at + 1800 - now())}` : "First brief in a few minutes") +
+    card("◆", "Trader", "Reads the brief, the market and the account, then opens, closes or moves stops.",
+         c ? (c.error ? `<span class="down">Unavailable: ${esc(c.error).slice(0, 80)}</span>` : `Decided ${ago(c.at)}${c.woken ? " · woken early" : ""}`) : "Waiting for the first hourly decision") +
+    card("◉", "Risk watcher", `Wakes when a held coin moves ${(ag.caps || {}).shock_pct || 1.5}% within 15 minutes. Can only close or tighten.`,
+         w ? `Last woken ${ago(w.at)}` : held ? `Watching ${held} position${held > 1 ? "s" : ""}` : "Idle: no open positions");
 }
 
-async function research() {
-  const r = await api("/api/research");
-  proof(r.replay);
-  if (!r.available) { $("research").innerHTML = `<div class="empty">No research report yet. Run <code>python scripts/research.py</code>.</div>`; return; }
-  $("rdate").textContent = "updated " + ist(r.generated_at);
-  const row = (v, pick) => { const a = v.in_sample || {}, b = v.out_of_sample || {};
-    return `<tr class="${pick ? "pick" : ""}"><td class="${pick ? "pick" : ""}">${esc(v.name)}${pick ? " ✓ live" : ""}</td>
-      <td class="${cls(a.return_pct)}">${pct(a.return_pct, 1)}</td><td>${a.max_drawdown_pct}%</td><td>${a.sharpe}</td>
-      <td class="${cls(b.return_pct)}"><b>${pct(b.return_pct, 1)}</b></td><td>${b.max_drawdown_pct}%</td><td>${b.sharpe}</td><td>${b.profit_factor ?? "–"}</td><td>${b.trades}</td></tr>`; };
-  $("research").innerHTML = `<p class="dim" style="margin-top:0">The rules book was replayed bar by bar on ${r.universe.length} major coins with real fees, slippage and funding.
-      Settings were picked using <b>${esc(r.in_sample)}</b> only, then checked on <b>${esc(r.out_of_sample)}</b>, which the pick never saw.</p>
-    <div class="scroll"><table class="num"><tr><th>Rules</th><th>2021–23 return</th><th>worst drop</th><th>Sharpe</th><th>2024–now return</th><th>worst drop</th><th>Sharpe</th><th>won per $1 lost</th><th>trades</th></tr>
-      ${r.variants.map(v => row(v, v.name === r.picked_on_in_sample)).join("")}
-      ${Object.entries(r.benchmarks).map(([k, v]) => `<tr><td class="faint">${esc(k)} (no costs)</td><td>${pct(v.in_sample.return_pct, 1)}</td><td>${v.in_sample.max_drawdown_pct}%</td><td></td><td>${pct(v.out_of_sample.return_pct, 1)}</td><td>${v.out_of_sample.max_drawdown_pct}%</td><td></td><td></td><td></td></tr>`).join("")}
-    </table></div>
-    <div id="rchart" class="chart mt"></div>
-    <div class="legend"><span><i style="background:var(--rules)"></i>${esc(r.picked_on_in_sample)}</span><span><i style="background:var(--down)"></i>${esc(r.variants[0].name)}</span></div>
-    <div class="note">${r.caveats.map(esc).join(" · ")}</div>`;
-  const ch = makeChart($("rchart"), 260);
-  if (ch) { const pick = r.variants.find(v => v.name === r.picked_on_in_sample); line(ch, css("--down"), r.variants[0].equity); line(ch, css("--rules"), pick.equity); ch.timeScale().fitContent(); }
+// --- decision, positions, news ------------------------------------------------------------------------
+function decision() {
+  const c = (S.agent || {}).claude;
+  if (!c) { $("decision").innerHTML = '<div class="empty">No decision yet in this session. The trader runs a couple of minutes after each hour.</div>'; $("dec-at").textContent = ""; return; }
+  $("dec-at").textContent = ist(c.at) + (c.cost_usd ? ` · $${c.cost_usd.toFixed(3)}` : "");
+  if (c.error) { $("decision").innerHTML = `<div class="banner">${esc(c.error)}</div>`; return; }
+  const acts = (c.actions || []).map(a => `<div class="item"><span class="tag ${a.type === "open" ? a.side : ""}">${esc(a.type === "open" ? a.side : a.type.replace("_", " "))}</span>
+      <div><div class="t"><b>${esc(coin(a.symbol))}</b> <span class="faint num">${a.type === "open" ? `risk ${a.risk_pct}% · ${a.leverage}× · stop ${px(a.stop_price)}${a.take_profit_price ? " · target " + px(a.take_profit_price) : ""}` : a.stop_price ? "stop " + px(a.stop_price) : ""}</span></div>
+      <div class="m">${esc(a.reason)}</div></div></div>`).join("");
+  $("decision").innerHTML = (c.woken ? `<div class="banner warn">Woken early: ${esc(c.woken)}</div>` : "") +
+    `<div class="quote">${esc(c.market_view)}</div><div class="mt">${acts || '<div class="empty">No trade: Claude chose to wait.</div>'}</div>`;
 }
 
+function positions() {
+  const list = (S.agent || {}).positions || [];
+  if (!list.length) { $("positions").innerHTML = '<div class="empty">No open positions. The account is all cash.</div>'; return; }
+  $("positions").innerHTML = `<table class="num"><tr><th>Coin</th><th>Size</th><th>Entry → now</th><th>P/L</th><th>Stop</th><th>To stop</th><th>Target</th><th>Liquidation</th></tr>` +
+    list.map(p => { const to = p.stop ? Math.abs(p.mark - p.stop) / p.mark * 100 : null;
+      return `<tr><td><b>${esc(coin(p.symbol))}</b> <span class="tag ${p.side}">${p.side}</span></td><td>${p.size}</td><td>${px(p.entry)} → ${px(p.mark)}</td>
+        <td class="${cls(p.unrealized)}"><b>${money(p.unrealized, true)}</b></td><td>${p.stop ? px(p.stop) : '<b class="down">none</b>'}</td>
+        <td class="dim">${to == null ? "–" : to.toFixed(2) + "%"}</td><td>${px(p.target)}</td><td class="faint">${px(p.liquidation)}</td></tr>`; }).join("") + "</table>";
+}
+
+function news() {
+  const n = (S.agent || {}).news;
+  if (!n) { $("news").innerHTML = $("headlines").innerHTML = '<div class="empty">The first brief arrives a few minutes after start.</div>'; return; }
+  $("news-at").textContent = ist(n.at);
+  $("news").innerHTML = `<div style="margin-bottom:10px"><span class="tag ${n.regime}">${esc(n.regime.replace("_", "-"))}</span></div><div class="quote">${esc(n.summary)}</div>` +
+    ((n.upcoming || []).length ? `<div class="mt"><div class="faint" style="font-size:12px;margin-bottom:4px">COMING UP</div>${n.upcoming.map(u =>
+      `<div class="item"><span class="tag ${u.impact === "high" ? "short" : ""}">${esc(u.impact)}</span><div><div class="t">${esc(u.event)}</div><div class="m">${esc(u.time_utc)}${/\d:\d/.test(u.time_utc) ? " UTC" : ""}</div></div></div>`).join("")}</div>` : "");
+  $("headlines").innerHTML = (n.events || []).map(e => `<div class="item"><span class="tag ${e.bias}">${esc(e.bias)}</span><div>
+      <div class="t"><b>${esc(e.headline)}</b></div>
+      <div class="m">${esc([e.impact + " impact", e.when, (e.coins || []).join(" "), e.source].filter(Boolean).join(" · "))}</div></div></div>`).join("") || '<div class="empty">Nothing notable.</div>';
+}
+
+// --- uptime --------------------------------------------------------------------------------------------
+function uptime() {
+  if (!U.available) { $("uptime").innerHTML = '<div class="empty">Uptime is recorded from the next service start.</div>'; return; }
+  const from = U.timeline_from, to = U.now, w = to - from, at = t => ((t - from) / w * 100).toFixed(3) + "%";
+  const bars = U.timeline.map(s => `<i class="${s.state === "offline" ? "offline" : ""}" style="left:${at(s.from)};width:calc(${at(s.to)} - ${at(s.from)} + 1px)" title="${s.state === "offline" ? "offline" : "running"} ${hm(s.from)}–${hm(s.to)}"></i>`).join("");
+  const ticks = [0, 6, 12, 18, 24].map(h => `<span style="left:${h / 24 * 100}%">${h === 24 ? "now" : hm(from + h * 3600)}</span>`).join("");
+  const ev = U.events.map(e => `<div class="ev"><span class="d ${e.kind}"></span><span>${esc(e.text)}${e.gap ? ` <span class="faint">(${e.kind === "online" ? "offline for" : "gap of"} ${span(e.gap)})</span>` : ""}</span><span class="faint num">${ist(e.at)}</span></div>`).join("");
+  $("uptime").innerHTML = `<div class="stats num">
+      <div>First started<b>${ist(U.first_start)}</b></div><div>Current session<b>${U.running ? "since " + ist(U.session_start) : "not running"}</b></div>
+      <div>Total alive<b>${span(U.alive_s)}</b></div><div>Network offline<b>${span(U.offline_s)}</b></div>
+      <div>Not running<b>${span(U.down_s)}</b></div><div>Restarts / resumes<b>${U.restarts}</b></div></div>
+    <div class="bar">${bars}</div><div class="ticks num">${ticks}</div>
+    <div class="legend"><span><i style="background:var(--up)"></i>running</span><span><i style="background:var(--warn)"></i>no network / exchange</span><span><i style="background:var(--off)"></i>stopped or asleep</span></div>
+    <div class="mt">${ev}</div>`;
+}
+
+// --- activity and caps ---------------------------------------------------------------------------------
+async function activity() {
+  const list = await api("/api/decisions?book=agent&limit=60");
+  const why = d => { try { const x = JSON.parse(d.detail); return x.reason || x.view || ""; } catch { return d.detail || ""; } };
+  $("activity").innerHTML = list.length ? `<table><tr><th>When</th><th>Coin</th><th>Action</th><th>Outcome</th><th>Why</th></tr>` + list.map(d =>
+    `<tr><td class="faint num" style="white-space:nowrap">${ist(d.at)}</td><td><b>${d.symbol === "*" ? "–" : esc(coin(d.symbol))}</b></td><td>${esc(d.action)}</td>
+     <td class="${/^(refused|exchange error|error|halt)/.test(d.outcome) || d.action === "error" ? "down" : /^opened|closed$/.test(d.outcome) ? "up" : ""}">${esc(d.outcome)}</td>
+     <td class="dim" style="min-width:240px">${esc(why(d)).slice(0, 220)}</td></tr>`).join("") + "</table>"
+    : '<div class="empty">Nothing yet. Decisions without trades are shown under Latest decision.</div>';
+}
+
+function caps() {
+  const c = (S.agent || {}).caps; if (!c) return;
+  $("caps").innerHTML = [["Risk per trade", c.risk_pct + "%"], ["Leverage", "up to " + c.leverage + "×"], ["Open positions", "max " + c.positions],
+    ["Entries a day", "max " + c.entries_per_day], ["Daily loss stop", "−" + c.daily_loss_pct + "%"], ["Halt everything below", money(c.floor)]]
+    .map(([k, v]) => `<span class="chip">${k} <b>${v}</b></span>`).join("");
+}
+
+// --- equity chart --------------------------------------------------------------------------------------
 async function equity() {
-  const since = range ? Date.now() / 1000 - range * 3600 : 0;
-  const cv = await api("/api/curve?since=" + since);
-  if (!charts.eq) { charts.eq = makeChart($("eqchart"), 280); if (!charts.eq) return; charts.rules = line(charts.eq, css("--rules"), []); charts.ai = line(charts.eq, css("--ai"), []); charts.opt = line(charts.eq, css("--opt"), []); }
-  const prep = d => { const seen = new Set(); return d.filter(([t]) => !seen.has(Math.floor(t)) && seen.add(Math.floor(t))).map(([t, v]) => ({time: Math.floor(t), value: v})); };
-  charts.rules.setData(prep(cv.baseline)); charts.ai.setData(prep(cv.ai)); charts.opt.setData(prep(cv.options || [])); charts.eq.timeScale().fitContent();
+  if (!window.LightweightCharts) return;
+  if (!chart) {
+    const el = $("chart");
+    chart = LightweightCharts.createChart(el, {height: 260, layout: {background: {type: "solid", color: "transparent"}, textColor: css("--faint"), fontSize: 11},
+      grid: {vertLines: {visible: false}, horzLines: {color: css("--line")}}, rightPriceScale: {borderVisible: false}, crosshair: {mode: 0},
+      timeScale: {borderVisible: false, timeVisible: true, secondsVisible: false, tickMarkFormatter: t => hm(t)}, handleScroll: false, handleScale: false,
+      localization: {priceFormatter: v => "$" + v.toFixed(2), timeFormatter: t => ist(t)}});
+    series = chart.addAreaSeries({lineColor: css("--accent"), topColor: css("--accent-soft"), bottomColor: "transparent", lineWidth: 2, priceLineVisible: false});
+    new ResizeObserver(() => { chart.applyOptions({width: el.clientWidth}); chart.timeScale().fitContent(); }).observe(el);
+  }
+  const c = await api("/api/curve?since=" + (hours ? now() - hours * 3600 : 0)), seen = new Set();
+  series.setData((c.agent || []).filter(([t]) => !seen.has(Math.floor(t)) && seen.add(Math.floor(t))).map(([t, v]) => ({time: Math.floor(t), value: v})));
+  chart.timeScale().fitContent();
 }
+$("range").onclick = e => { const h = e.target.dataset.h; if (h == null) return; hours = +h;
+  [...$("range").children].forEach(b => b.classList.toggle("on", b === e.target)); equity(); };
 
+// --- refresh -------------------------------------------------------------------------------------------
 async function refresh() {
   try {
-    const st = await api("/api/status"), now = Date.now() / 1000, b = st.books || {}, set = st.settings || {};
-    const stale = !st.last_tick || now - st.last_tick > 180;
-    $("health").className = "pill" + (stale ? "" : " live");
-    $("health").innerHTML = `<span class="dot" style="${stale ? "background:var(--warn)" : ""}"></span><b>${stale ? "Not running" : "Live"}</b> · updated ${dur(now - (st.last_tick || now))} ago${st.last_error ? " · " + esc(st.last_error).slice(0, 60) : ""}`;
-    $("next").innerHTML = st.next_cycle ? `Next scan in <b>${dur(Math.max(0, st.next_cycle - now))}</b>` : "";
-    $("rules").innerHTML = `<b>${set.bar_hours}h bars</b> · ${set.trail ? "trailing " + set.stop_atr + "×ATR stop" : set.stop_atr + "×ATR stop"}${set.trend_exit ? " · trend exit" : ""} · ${(set.risk_per_trade * 100).toFixed(1)}% risk`;
-    book("ai", b.ai, "Claude", "proposes entries", "var(--ai)");
-    book("baseline", b.baseline, "Rules", "trend rules only", "var(--rules)");
-    book("options", b.options, "Options", "buys calls & puts on BTC/ETH trend signals · premium is the max loss · not backtestable, forward test only", "var(--opt)");
-    if (b.ai && b.baseline) {
-      const d = b.ai.equity - b.baseline.equity, n = Math.min(b.ai.trades, b.baseline.trades);
-      const share = Math.max(5, Math.min(95, 50 + d / Math.max(1, set.start_equity) * 1000));
-      $("lead").innerHTML = `<span>${Math.abs(d) < .01 ? "Dead level" : `<b class="${d > 0 ? "" : ""}" style="color:${d > 0 ? "var(--ai)" : "var(--rules)"}">${d > 0 ? "Claude" : "Rules"}</b> ahead by <b class="num">${money(Math.abs(d))}</b>`}
-        <span class="faint"> · ${n < 30 ? `too early to judge (${n}/30 closed trades each)` : "enough trades to compare"}</span></span>
-        <span class="meter" title="Claude's share of the lead"><i style="width:${share}%"></i></span>`;
-    }
-    positions(st.positions || []);
-    agent(st.agent, await api("/api/curve?since=" + (Date.now() / 1000 - 30 * 86400)));
-    council(st.council, st.claude_cost_today);
-    scan(st.scan, st.last_cycle);
-    const dec = await api("/api/decisions?limit=60");
-    $("decisions").innerHTML = dec.length ? `<table><tr><th>Time</th><th>Book</th><th>Coin</th><th>Idea</th><th>Outcome</th><th>Reason</th></tr>${dec.map(d => {
-      let why = ""; try { const j = JSON.parse(d.detail); why = j.thesis || j.reason || ""; } catch { why = d.detail; }
-      return `<tr><td class="num">${ist(d.at)}</td><td><span class="tag ${d.book}" style="margin:0">${bookName(d.book)}</span></td><td>${esc(d.symbol)}</td>
-        <td>${esc(d.action)}${d.conviction ? " " + Math.round(d.conviction * 100) + "%" : ""}</td><td>${esc(d.outcome)}</td><td class="dim">${esc(why).slice(0, 200)}</td></tr>`; }).join("")}</table>` : '<div class="empty">No decisions yet.</div>';
-    await Promise.all([equity(), trades()]);
-  } catch (e) {
-    $("health").className = "pill"; $("health").innerHTML = `<span class="dot" style="background:var(--down)"></span><b>Offline</b> · ${esc(e.message)}`;
-  }
+    [S, U] = await Promise.all([api("/api/status"), api("/api/uptime")]); lastOK = now();
+    kpis(); agents(); decision(); positions(); news(); uptime(); caps();
+  } catch (e) { console.warn(e); }
+  ticking();
 }
-$("range").onclick = e => { const b = e.target.closest("button"); if (!b) return; range = +b.dataset.h; [...$("range").children].forEach(x => x.classList.toggle("on", x === b)); equity(); };
-$("tfilter").onclick = e => { const b = e.target.closest("button"); if (!b) return; tbook = b.dataset.b; [...$("tfilter").children].forEach(x => x.classList.toggle("on", x === b)); trades(); };
-refresh(); research(); setInterval(refresh, 15000);
+refresh(); equity(); activity();
+setInterval(refresh, 10000); setInterval(ticking, 1000); setInterval(equity, 60000); setInterval(activity, 20000);
 </script>
 </body>
 </html>

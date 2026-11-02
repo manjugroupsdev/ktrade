@@ -111,6 +111,15 @@ class FakeClaude:
             raise ExchangeError(self.error)
         return {"market_view": "test", "actions": list(self.actions), "cost_usd": 0.02}
 
+    def watch(self, state, symbols):
+        self.seen.append(("watch", state, symbols))
+        return {"market_view": "hack news", "actions": list(self.actions), "cost_usd": 0.03}
+
+    def news(self, previous, now_utc):
+        self.seen.append(("news", previous))
+        return {"regime": "risk_off", "summary": "CPI hot", "events": [], "upcoming": [], "wake_trader": True,
+                "wake_reason": "CPI beat", "cost_usd": 0.1}
+
 
 class RealPrices:
     def tickers(self):
@@ -170,3 +179,40 @@ def test_live_mode_needs_the_written_confirmation(ledger, clock):
     with pytest.raises(ExchangeError, match="LIVE_CONFIRM"):
         loop(ledger, clock, FakeTrader(), FakeClaude(), agent_mode="live")
     assert loop(ledger, clock, FakeTrader(), FakeClaude(), agent_mode="live", agent_live_confirm=LIVE_PHRASE)
+
+
+def test_news_desk_brief_reaches_the_trader_and_wakes_it_early(ledger, clock):
+    claude = FakeClaude()
+    a = loop(ledger, clock, FakeTrader(), claude)
+    a.cycle(a.context())                                                 # a normal hourly cycle just ran
+    ledger.put("agent_last_slot", str(int(clock.t // 3600)))
+    assert a.news_tick()["regime"] == "risk_off"
+    assert a.news_tick() is None                                         # not due again for 30 minutes
+    clock.t += 300
+    a.tick()
+    assert len([x for x in claude.seen if x[0] != "news"]) == 1          # woken, but not within 15 min of the last cycle
+    clock.t += 900
+    a.tick()
+    state = claude.seen[-1][0]
+    assert state["news_desk"]["summary"] == "CPI hot" and state["woken_early_because"] == "CPI beat"
+    assert not ledger.get("agent_wake")
+
+
+def test_risk_watcher_wakes_on_a_sharp_move_and_can_only_close_or_tighten(ledger, clock):
+    t = FakeTrader()
+    t.pos = [{"symbol": "BTCUSD", "side": "long", "size": 1, "entry": 80000, "mark": 80000, "unrealized": 0, "liquidation": 0}]
+    claude = FakeClaude([{"type": "close", "symbol": "BTCUSD", "reason": "exchange hack"}])
+    a = loop(ledger, clock, t, claude, agent_shock_pct=1.5)
+    c = a.context()
+    assert not a.watch(c)                                                # first price seen, no move yet
+    clock.t += 300
+    c["quotes"] = QUOTES | {"BTCUSD": {"bid": 78700.0, "ask": 78701.0, "mark": 78700.0}}   # -1.6% in 5 min
+    assert a.watch(c)
+    assert claude.seen[-1][0] == "watch" and claude.seen[-1][1]["sharp_moves"][0]["against_you"]
+    assert ("close", "BTCUSD") in t.calls
+    assert not a.shocks(c)                                               # quiet for 15 min after a call
+
+
+def test_watcher_schema_forbids_opening():
+    from ktrade.agent import schema
+    assert schema(["BTCUSD"], ("close", "move_stop"))["properties"]["actions"]["items"]["properties"]["type"]["enum"] == ["close", "move_stop"]

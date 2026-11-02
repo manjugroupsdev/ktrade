@@ -2,11 +2,13 @@
 import hmac
 import json
 import os
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from ktrade.ledger import BOOKS
+from ktrade.uptime import summary
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
@@ -53,11 +55,19 @@ def create_app(engine, ledger, s) -> FastAPI:
         return ledger.trades(book or None, limit)
 
     @app.get("/api/decisions")
-    def decisions(limit: int = 60):
-        return ledger.decisions(limit)
+    def decisions(limit: int = 60, book: str = ""):
+        return [d for d in ledger.decisions(limit * 10 if book else limit) if not book or d["book"] == book][:limit]
+
+    @app.get("/api/uptime")
+    def uptime():
+        return summary(ledger.uptime_rows(), time.time())
 
     @app.get("/")
     def index():
         return FileResponse(os.path.join(STATIC, "index.html"))
+
+    @app.get("/lab")
+    def lab():
+        return FileResponse(os.path.join(STATIC, "lab.html"))
 
     return app

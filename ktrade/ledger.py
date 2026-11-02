@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS decisions (id INTEGER PRIMARY KEY, at REAL, book TEXT
 CREATE TABLE IF NOT EXISTS snapshots (at REAL, book TEXT, equity REAL);
 CREATE TABLE IF NOT EXISTS day_start (book TEXT, day TEXT, equity REAL, PRIMARY KEY (book, day));
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS uptime (id INTEGER PRIMARY KEY, kind TEXT, started REAL, ended REAL, note TEXT);
 """
 
 
@@ -49,6 +50,19 @@ class Ledger:
     def put(self, key: str, value: str) -> None:
         with self._db() as db:
             db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
+
+    # --- uptime: "run" = the agent process alive and ticking, "offline" = exchange/network unreachable --
+    def uptime_open(self, kind: str, at: float, note: str) -> int:
+        with self._db() as db:
+            return db.execute("INSERT INTO uptime (kind, started, ended, note) VALUES (?,?,?,?)", (kind, at, at, note)).lastrowid
+
+    def uptime_close(self, row_id: int, at: float, note: Optional[str] = None) -> None:
+        with self._db() as db:
+            db.execute("UPDATE uptime SET ended=?, note=COALESCE(?, note) WHERE id=?", (at, note, row_id))
+
+    def uptime_rows(self) -> List[Dict[str, Any]]:
+        with self._db() as db:
+            return [dict(r) for r in db.execute("SELECT * FROM uptime ORDER BY started, id")]
 
     # --- positions -----------------------------------------------------------------------------
     def positions(self, book: Optional[str] = None) -> List[Dict[str, Any]]:

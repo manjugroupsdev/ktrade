@@ -93,7 +93,8 @@ def test_dashboard_api_and_token_gate(settings, delta, ledger, clock):
     assert c.get("/api/status").json()["books"]["baseline"]["open"] == 2
     assert c.get("/api/status", headers={"x-forwarded-for": "1.2.3.4"}).status_code == 401
     assert c.get("/api/status", headers={"x-forwarded-for": "1.2.3.4", "x-panel-token": "s3cret"}).status_code == 200
-    assert "Claude vs Rules" in c.get("/").text
+    assert "ktrade agent" in c.get("/").text and "Claude vs Rules" in c.get("/lab").text
+    assert c.get("/api/uptime").json() == {"available": False}
     assert set(c.get("/api/curve").json()) == {"ai", "baseline", "options", "agent"}
 
 

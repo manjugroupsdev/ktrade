@@ -2,8 +2,14 @@
 The Claude agent book: Claude decides everything (coin, direction, size, leverage, stop, target, exits), and this
 module enforces hard caps in code before any order reaches the exchange. Claude cannot change the caps.
 
-Every hour Claude gets the account, its open positions (with their exchange-held stops), its recent decisions and
-a table of liquid coins, then answers with actions in a JSON schema. Each action passes the guard or is refused
+Three Claude roles, each a separate headless call with its own job:
+  news desk     every 30 min, searches the web (crypto, SEC/regulation, macro and inflation, war and politics,
+                equities) and writes a brief; it can wake the trader early when something big breaks
+  trader        every hour (or when woken), reads the brief, the account, its positions and a table of liquid
+                coins, then answers with actions in a JSON schema
+  risk watcher  when a held coin moves sharply within 15 minutes, finds out why and may close or tighten the stop
+                (it can never open a trade)
+ Each action passes the guard or is refused
 with a reason; both are logged and shown on the dashboard. Stops live on the exchange as bracket orders, so a
 sleeping Mac cannot leave a position unprotected.
 """
@@ -13,7 +19,7 @@ import math
 import subprocess
 import time
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from ktrade.config import Settings
@@ -118,14 +124,34 @@ Hard limits are enforced by code and cannot be changed: any action outside them 
 Lessons from live LLM trading contests: most AI traders lost money, mainly by over-trading, so fees and noise ate
 the account. Fees + slippage are roughly 0.15% of notional per round trip. Doing nothing is often the best action.
 Take a trade only when trend, volatility and fresh news/context agree, with a stop at a level that proves you wrong.
-Prefer letting winners run with a trailing stop over tiny targets. Never average down. Be concise and specific."""
+Prefer letting winners run with a trailing stop over tiny targets. Never average down. Be concise and specific.
+The state includes a brief from your news desk, which searches the web every 30 minutes. Weigh it: stand aside before
+big scheduled events (CPI, FOMC), respect risk-off regimes, and use WebSearch only for a specific question the brief
+does not answer."""
+
+NEWS_SYSTEM = """You are the news desk for an autonomous crypto futures trader. Search the web now for what moved crypto
+in the last 24 hours and what may move it in the next 24 hours. Run several searches covering:
+1. crypto: ETF flows, SEC/CFTC actions and filings (ETF S-1 / 19b-4, lawsuits, approvals), exchange hacks or outages,
+   stablecoin problems, token unlocks, large liquidations, whale and treasury-company moves
+2. macro: US CPI / PCE / jobs data, Fed and FOMC speakers and rate expectations, dollar, bond yields, oil
+3. politics and war: conflicts, sanctions, tariffs, elections, anything that can spike inflation or fear
+4. stocks: Nasdaq / S&P moves, big tech earnings, overall risk appetite
+5. India: RBI, crypto tax or regulation news, Delta Exchange notices
+Prefer primary and reputable sources and give dates. Never invent news; if you cannot confirm something, leave it out.
+Then judge the effect on crypto. Set wake_trader to true only if something NEW since the previous brief clearly changes
+the risk of open positions or creates a strong opportunity now."""
+
+WATCH_SYSTEM = """You are the risk watcher for open crypto futures positions. A held coin just moved sharply. Search the web
+quickly for why (news, liquidations, hacks, macro data, a big market-wide move). Then decide per position: hold (no
+action), tighten the stop (move_stop), or close. You cannot open trades. Normal noise is not a reason to act; act when
+the cause threatens the trade's thesis, or to lock in a large open profit."""
 
 
-def schema(symbols: List[str]) -> Dict[str, Any]:
+def schema(symbols: List[str], kinds=("open", "close", "move_stop")) -> Dict[str, Any]:
     return {"type": "object", "required": ["market_view", "actions"], "properties": {
         "market_view": {"type": "string", "maxLength": 500},
         "actions": {"type": "array", "maxItems": 6, "items": {"type": "object", "required": ["type", "symbol", "reason"], "properties": {
-            "type": {"type": "string", "enum": ["open", "close", "move_stop"]},
+            "type": {"type": "string", "enum": list(kinds)},
             "symbol": {"type": "string", "enum": symbols or ["NONE"]},
             "side": {"type": "string", "enum": ["long", "short"]},
             "risk_pct": {"type": "number", "minimum": 0, "maximum": 100, "description": "% of equity lost if the stop is hit"},
@@ -136,29 +162,60 @@ def schema(symbols: List[str]) -> Dict[str, Any]:
             "reason": {"type": "string", "maxLength": 400}}}}}}
 
 
+NEWS_SCHEMA = {"type": "object", "required": ["regime", "summary", "events", "upcoming", "wake_trader"], "properties": {
+    "regime": {"type": "string", "enum": ["risk_on", "neutral", "risk_off"]},
+    "summary": {"type": "string", "maxLength": 700},
+    "events": {"type": "array", "maxItems": 10, "items": {"type": "object", "required": ["headline", "impact", "bias"], "properties": {
+        "headline": {"type": "string", "maxLength": 200}, "when": {"type": "string", "maxLength": 40},
+        "impact": {"type": "string", "enum": ["high", "medium", "low"]},
+        "bias": {"type": "string", "enum": ["bullish", "bearish", "mixed"]},
+        "coins": {"type": "array", "items": {"type": "string"}, "maxItems": 8},
+        "source": {"type": "string", "maxLength": 80}}}},
+    "upcoming": {"type": "array", "maxItems": 8, "items": {"type": "object", "required": ["event", "time_utc", "impact"], "properties": {
+        "event": {"type": "string", "maxLength": 120}, "time_utc": {"type": "string", "maxLength": 40},
+        "impact": {"type": "string", "enum": ["high", "medium", "low"]}}}},
+    "wake_trader": {"type": "boolean"},
+    "wake_reason": {"type": "string", "maxLength": 200}}}
+
+
 class ClaudeAgent:
     def __init__(self, s: Settings, run: Callable = subprocess.run):
         self.s, self.run = s, run
 
-    def decide(self, context: Dict[str, Any], symbols: List[str]) -> Dict[str, Any]:
-        prompt = ("Current state (JSON):\n" + json.dumps(context, indent=1, default=str) +
-                  "\n\nDecide your actions now. An empty actions list is a valid answer. Reply with the JSON schema.")
-        tools = ["WebSearch"] if self.s.claude_web else []
+    def ask(self, system: str, prompt: str, out_schema: Dict[str, Any], web: bool, timeout: int) -> Dict[str, Any]:
+        """One clean headless Claude call; the structured answer plus `cost_usd`."""
+        tools = ["WebSearch"] if web else []
         cmd = [self.s.claude_bin, "-p", prompt, "--model", self.s.agent_model, "--output-format", "json",
-               "--json-schema", json.dumps(schema(symbols)), "--system-prompt", SYSTEM, "--no-session-persistence",
+               "--json-schema", json.dumps(out_schema), "--system-prompt", system, "--no-session-persistence",
                "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", ""]
         cmd += ["--tools", *tools, "--allowedTools", *tools] if tools else ["--tools", ""]
         try:
-            done = self.run(cmd, capture_output=True, text=True, timeout=self.s.claude_timeout)
+            done = self.run(cmd, capture_output=True, text=True, timeout=timeout)
             out = json.loads(done.stdout)
         except (OSError, subprocess.TimeoutExpired, ValueError) as e:
             raise ExchangeError(f"Claude did not answer: {e}") from e
         if out.get("is_error") or not isinstance(out.get("structured_output"), dict):
             raise ExchangeError(f"Claude error: {str(out.get('result') or out)[:300]}")
-        d = out["structured_output"]
-        return {"market_view": str(d.get("market_view", ""))[:500],
-                "actions": [x for x in d.get("actions", []) if x.get("symbol") in symbols][:6],
-                "cost_usd": float(out.get("total_cost_usd") or 0)}
+        return out["structured_output"] | {"cost_usd": float(out.get("total_cost_usd") or 0)}
+
+    def _actions(self, system, context, symbols, kinds, web) -> Dict[str, Any]:
+        prompt = ("Current state (JSON):\n" + json.dumps(context, indent=1, default=str) +
+                  "\n\nDecide your actions now. An empty actions list is a valid answer. Reply with the JSON schema.")
+        d = self.ask(system, prompt, schema(symbols, kinds), web, self.s.claude_timeout)
+        return {"market_view": str(d.get("market_view", ""))[:500], "cost_usd": d["cost_usd"],
+                "actions": [x for x in d.get("actions", []) if x.get("symbol") in symbols and x.get("type") in kinds][:6]}
+
+    def decide(self, context: Dict[str, Any], symbols: List[str]) -> Dict[str, Any]:
+        return self._actions(SYSTEM, context, symbols, ("open", "close", "move_stop"), self.s.claude_web)
+
+    def watch(self, context: Dict[str, Any], symbols: List[str]) -> Dict[str, Any]:
+        return self._actions(WATCH_SYSTEM, context, symbols, ("close", "move_stop"), True)
+
+    def news(self, previous: Optional[Dict[str, Any]], now_utc: str) -> Dict[str, Any]:
+        prev = {k: previous.get(k) for k in ("at_utc", "regime", "summary", "events")} if previous else None
+        prompt = (f"Time now (UTC): {now_utc}\nYour previous brief: {json.dumps(prev, default=str)}\n\n"
+                  "Research now and reply with the JSON schema.")
+        return self.ask(NEWS_SYSTEM, prompt, NEWS_SCHEMA, True, max(self.s.claude_timeout, 420))
 
 
 # --- the loop ------------------------------------------------------------------------------------------
@@ -169,8 +226,11 @@ class AgentLoop:
         self.s, self.ledger, self.data, self.clock = s, ledger, data_delta, clock
         self.trader = trader or DeltaTrader(LIVE_URL if s.agent_mode == "live" else DEMO_URL, s.delta_key, s.delta_secret, clock=clock)
         self.claude = claude or ClaudeAgent(s)
-        self.status: Dict[str, Any] = {"mode": s.agent_mode, "enabled": True}
+        self.status: Dict[str, Any] = {"mode": s.agent_mode, "enabled": True, "news": self.brief(),
+                                       "claude": json.loads(ledger.get("agent_claude") or "null")}
         self._snap_at = 0.0
+        self._marks: Dict[str, List[tuple]] = {}            # recent (time, mark) per held coin, for shock detection
+        self._watched: Dict[str, float] = {}                # last risk-watcher call per coin
 
     # state ------------------------------------------------------------------------------------------
     def _day(self) -> str:
@@ -212,11 +272,16 @@ class AgentLoop:
         if self.clock() - self._snap_at >= 300:
             self._snap_at = self.clock()
             self.ledger.snapshot(BOOK, ctx["equity"])
+        if not ctx["halted"] and self.watch(ctx):
+            ctx = self.context()
         period = self.s.agent_cycle_minutes * 60
         slot = int(self.clock() // period)
-        if not ctx["halted"] and int(self.ledger.get("agent_last_slot", "-1")) != slot and self.clock() % period >= 150:
-            self.ledger.put("agent_last_slot", str(slot))
-            self.cycle(ctx)
+        due = int(self.ledger.get("agent_last_slot", "-1")) != slot and self.clock() % period >= 150
+        woken = self.ledger.get("agent_wake") and self.clock() - float(self.ledger.get("agent_last_cycle_at") or 0) >= 900
+        if not ctx["halted"] and (due or woken):
+            if due:
+                self.ledger.put("agent_last_slot", str(slot))
+            self.cycle(ctx, woken=self.ledger.get("agent_wake") or "")
             ctx = self.context()
         self.status.update(mode=self.s.agent_mode, live=self.trader.is_live, last_tick=self.clock(), equity=ctx["equity"],
                            available=ctx["available"], start_equity=ctx["start_equity"], day_start=ctx["day_start"],
@@ -224,7 +289,8 @@ class AgentLoop:
                            positions=[p | ctx["stops"].get(p["symbol"], {}) for p in ctx["positions"]],
                            caps={"risk_pct": self.s.agent_max_risk_pct, "leverage": self.s.agent_max_leverage,
                                  "positions": self.s.agent_max_positions, "entries_per_day": self.s.agent_max_entries_per_day,
-                                 "daily_loss_pct": self.s.agent_daily_loss_pct, "floor": self.s.agent_floor_equity})
+                                 "daily_loss_pct": self.s.agent_daily_loss_pct, "floor": self.s.agent_floor_equity,
+                                 "shock_pct": self.s.agent_shock_pct})
         return self.status
 
     def halt(self, ctx: Dict[str, Any], reason: str) -> None:
@@ -237,8 +303,88 @@ class AgentLoop:
         self.ledger.put("agent_halted", reason)
         self.ledger.decide(BOOK, "*", "halt", 1, "halted", reason)
 
+    # news desk ------------------------------------------------------------------------------------------
+    def brief(self) -> Optional[Dict[str, Any]]:
+        try:
+            return json.loads(self.ledger.get("agent_news") or "null")
+        except ValueError:
+            return None
+
+    def news_tick(self, force: bool = False) -> Optional[Dict[str, Any]]:
+        """Run the news desk when due (its own thread calls this; a web-research call takes a few minutes)."""
+        prev = self.brief()
+        if not force and prev and self.clock() - prev.get("at", 0) < self.s.agent_news_minutes * 60:
+            return None
+        now_utc = datetime.fromtimestamp(self.clock(), timezone.utc).strftime("%Y-%m-%d %H:%M")
+        try:
+            b = self.claude.news(prev, now_utc)
+        except ExchangeError as e:
+            log.error("news desk: %s", e)
+            self.status["news_error"] = str(e)
+            return None
+        b |= {"at": self.clock(), "at_utc": now_utc}
+        self.ledger.put("agent_news", json.dumps(b))
+        self.ledger.decide(BOOK, "*", "news brief", 0, b.get("regime", "").replace("_", "-"), {"reason": b.get("summary", "")})
+        self.status.update(news=b, news_error=None)
+        log.info("news desk: %s | %s", b.get("regime"), str(b.get("summary", ""))[:160])
+        if b.get("wake_trader"):
+            self.ledger.put("agent_wake", b.get("wake_reason") or "breaking news")
+            log.info("news desk woke the trader: %s", b.get("wake_reason"))
+        return b
+
+    def news_for_trader(self) -> Optional[Dict[str, Any]]:
+        b = self.brief()
+        if not b:
+            return None
+        age = (self.clock() - b.get("at", 0)) / 60
+        return {"age_minutes": round(age)} | ({"stale": "older than 3 hours"} if age > 180 else {}) | \
+            {k: b.get(k) for k in ("regime", "summary", "events", "upcoming")}
+
+    # risk watcher -----------------------------------------------------------------------------------------
+    def shocks(self, ctx: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Held coins that moved at least agent_shock_pct within the last 15 minutes."""
+        now, out = self.clock(), []
+        held = {p["symbol"]: p for p in ctx["positions"]}
+        self._marks = {k: v for k, v in self._marks.items() if k in held}
+        for sym, p in held.items():
+            mark = (ctx["quotes"].get(sym) or {}).get("mark") or p["mark"]
+            hist = [(t, m) for t, m in self._marks.get(sym, []) if now - t <= 900] + [(now, mark)]
+            self._marks[sym] = hist
+            move = (mark / hist[0][1] - 1) * 100 if hist[0][1] else 0
+            if abs(move) >= self.s.agent_shock_pct and now - self._watched.get(sym, 0) >= 900:
+                out.append({"symbol": sym, "move_15m_pct": round(move, 2), "against_you": (move < 0) == (p["side"] == "long")})
+        return out
+
+    def watch(self, ctx: Dict[str, Any]) -> bool:
+        hits = self.shocks(ctx)
+        if not hits:
+            return False
+        for h in hits:
+            self._watched[h["symbol"]] = self.clock()
+        held = sorted({p["symbol"] for p in ctx["positions"]})
+        state = {"time_utc": datetime.fromtimestamp(self.clock(), timezone.utc).strftime("%Y-%m-%d %H:%M"), "sharp_moves": hits,
+                 "open_positions": [{k: p.get(k) for k in ("symbol", "side", "size", "entry", "mark", "unrealized", "liquidation")}
+                                    | ctx["stops"].get(p["symbol"], {}) for p in ctx["positions"]],
+                 "news_desk": self.news_for_trader()}
+        log.info("risk watcher woken: %s", hits)
+        try:
+            d = self.claude.watch(state, held)
+        except ExchangeError as e:
+            log.error("risk watcher: %s", e)
+            self.status["watch"] = {"at": self.clock(), "moves": hits, "error": str(e)}
+            return False
+        self.status["watch"] = {"at": self.clock(), "moves": hits, "view": d["market_view"], "actions": d["actions"]}
+        self.ledger.decide(BOOK, ",".join(h["symbol"] for h in hits), "watch", 0,
+                           f"risk watcher: {len(d['actions'])} action(s)", {"moves": hits, "view": d["market_view"]})
+        for a in d["actions"]:
+            self.act(a, ctx)
+            ctx.update({k: v for k, v in self.context().items() if k != "allowed"})
+        return True
+
     # decisions --------------------------------------------------------------------------------------------
-    def cycle(self, ctx: Dict[str, Any]) -> None:
+    def cycle(self, ctx: Dict[str, Any], woken: str = "") -> None:
+        self.ledger.put("agent_last_cycle_at", str(self.clock()))
+        self.ledger.put("agent_wake", "")
         real = self.data.tickers()
         scan_s = replace(self.s, bar_hours=1, max_candidates=12)
         result = scan(self.data, scan_s, self.clock(), None, real)
@@ -249,7 +395,7 @@ class AgentLoop:
         recent = [{"at": datetime.fromtimestamp(d["at"]).strftime("%d %b %H:%M"), "symbol": d["symbol"], "action": d["action"],
                    "outcome": d["outcome"]} for d in self.ledger.decisions(80) if d["book"] == BOOK][:15]
         state = {
-            "time_utc": datetime.utcfromtimestamp(self.clock()).strftime("%Y-%m-%d %H:%M"),
+            "time_utc": datetime.fromtimestamp(self.clock(), timezone.utc).strftime("%Y-%m-%d %H:%M"),
             "account": {"equity_usd": round(ctx["equity"], 2), "available_usd": round(ctx["available"], 2),
                         "started_with_usd": round(ctx["start_equity"], 2), "today_pnl_usd": round(ctx["equity"] - ctx["day_start"], 2),
                         "mode": "LIVE real money" if self.trader.is_live else "DEMO (paper)"},
@@ -262,7 +408,8 @@ class AgentLoop:
             "candidates_1h": [{k: (round(v, 4) if isinstance(v, float) else v) for k, v in c.items() if k != "contract_value"} for c in candidates],
             "skipped_as_too_wild": [w["symbol"] for w in result["too_wild"]],
             "your_recent_decisions": recent,
-        }
+            "news_desk": self.news_for_trader() or "no brief yet",
+        } | ({"woken_early_because": woken} if woken else {})
         symbols = sorted(ctx["allowed"] | {p["symbol"] for p in ctx["positions"]})
         try:
             d = self.claude.decide(state, symbols)
@@ -271,7 +418,11 @@ class AgentLoop:
             self.ledger.decide(BOOK, "*", "error", 0, "Claude unavailable", str(e))
             self.status["claude"] = {"at": self.clock(), "error": str(e)}
             return
-        self.status["claude"] = {"at": self.clock(), "market_view": d["market_view"], "actions": d["actions"], "cost_usd": d["cost_usd"]}
+        self.status["claude"] = {"at": self.clock(), "market_view": d["market_view"], "actions": d["actions"],
+                                 "cost_usd": d["cost_usd"], "woken": woken}
+        self.ledger.put("agent_claude", json.dumps(self.status["claude"]))
+        if not d["actions"]:
+            self.ledger.decide(BOOK, "*", "hold", 0, "no trade", {"reason": d["market_view"]})
         log.info("agent view: %s | %d action(s)", d["market_view"][:160], len(d["actions"]))
         for a in d["actions"]:
             self.act(a, ctx)
